@@ -1,0 +1,103 @@
+#ifndef PROTOCOL_H
+#define PROTOCOL_H
+
+#include <deque>
+#include <expected>
+#include <seastar/core/temporary_buffer.hh>
+
+namespace redis {
+
+    enum class FrameDecodeError {
+        Invalid,
+        Incomplete,
+        Empty,
+    };
+
+    /**
+     * @brief The Decoder class is responsible for decoding Redis protocol frames.
+     *
+     * The Decoder class accumulates data chunks in a deque and processes them
+     * to extract complete frames as defined by the Redis protocol. Each fully processed chunk should be removed
+     * from the queue. We maintains an internal cursor which denotes where we sit in the next chunk to process
+     * (which is actually queue.front()).
+     */
+    class Decoder {
+        std::deque<seastar::temporary_buffer<char>> _data;
+        size_t _cursor_position = 0;
+
+        /**
+         * @brief _read_until_crlf_simple tries to find the position of CRLF in the buffer list (queue number and
+         * cursor position. The caller can use the positions to immediately accumulate a simple string.
+         * This method does not alter the internal cursor of the decoder object.
+         *
+         * @return the coordinates of CRLF (queue index, cursor position) of the next CRLF or an error
+         */
+        std::expected<std::pair<size_t, size_t>, FrameDecodeError> _read_until_crlf_simple() noexcept;
+
+    public:
+        // prevent copy because we want to match seastar::temporary_buffer<char> behavior
+        // which is not copyable.
+        Decoder(const Decoder &) = delete;
+        Decoder &operator=(const Decoder &) = delete;
+
+        Decoder() noexcept = default;
+        Decoder(Decoder &&other) noexcept = default;
+        Decoder &operator=(Decoder &&other) noexcept = default;
+
+        /**
+         * @brief Adds a chunk of data to the Decoder. The decoder is supposed to be filled
+         * from an external source (network stream, for instance). We expect this source to
+         * produce temp buffers which are then added to the decoder to allow the processing
+         * of complete RESP frames.
+         *
+         * @param chunk A temporary buffer containing a chunk of data to be decoded.
+         */
+        void add_upstream_data(seastar::temporary_buffer<char> chunk) noexcept;
+
+        /**
+         * @brief get_simple_string tries to decode a simple string as defined in RESP3.
+         * A simple string is a string which does not contain any of CR or LF in it.
+         * This function reset the internal cursor back to its initial state if an error occurs.
+         * The internal cursor is set to the next position to read from and the successful data is consumed from the
+         * buffer group.
+         * This variant checks that there is no single CR or LF before a CRLF and fires an error in such cases.
+         *
+         * @return a string or an error
+         */
+        std::expected<std::string, FrameDecodeError> get_simple_string() noexcept;
+
+        /**
+         * @brief reset_positions sets the cursors at the given positions. This methods checks if the new cursors
+         * are in valid boundaries and throw if not.
+         *
+         * @param new_cursor_position
+         */
+        void reset_positions(size_t new_cursor_position);
+
+        /**
+         * @brief get_cursor_position returns the current position of the internal cursor.
+         *
+         * @return
+         */
+        size_t get_cursor_position() { return _cursor_position; };
+
+        /**
+         * @brief get_current_buffer_size returns the size of the actual internal buffer.
+         *
+         * @return
+         */
+        size_t get_current_buffer_size() {
+            assert(!_data.empty());
+            return _data[0].size();
+        };
+
+        /**
+         * @brief get_buffer_number returns the number of internal buffers.
+         *
+         * @return
+         */
+        size_t get_buffer_number() { return _data.size(); };
+    };
+} // namespace redis
+
+#endif // PROTOCOL_H
