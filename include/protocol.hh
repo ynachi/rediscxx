@@ -19,7 +19,7 @@ namespace redis {
      * The Decoder class accumulates data chunks in a deque and processes them
      * to extract complete frames as defined by the Redis protocol. Each fully processed chunk should be removed
      * from the queue. We maintains an internal cursor which denotes where we sit in the next chunk to process
-     * (which is actually queue.front()).
+     * (which is actually queue.front()). In case of a faulty frame, the 'bad' data ois trimmed out.
      */
     class Decoder {
         std::deque<seastar::temporary_buffer<char>> _data;
@@ -97,6 +97,21 @@ namespace redis {
          * @return
          */
         size_t get_buffer_number() { return _data.size(); };
+
+        /**
+         * @brief advance advance the current buffer by n. It removes the buffer if n height than the actual buffer
+         * size. n should be the index of the next char to be processed. For example, for "ABC\r\nOLA", calling
+         * trim_front(5) would leave the buffer with "OLA".
+         *
+         * @param n
+         */
+        void trim_front(size_t n);
+
+        /**
+         * @brief pop_front removes a buffer from the front of the queue. Warning! This method set back the cursor to
+         * 0. Because we expect to start reading the next buffer from index 0.
+         */
+        void pop_front() noexcept;
     };
 } // namespace redis
 

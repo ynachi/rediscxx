@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "protocol.hh" // Include the header where Decoder is declared
+#include "protocol.hh"
 
 using namespace redis;
 class DecoderTest : public ::testing::Test {
@@ -33,10 +33,18 @@ TEST_F(DecoderTest, IncompleteCRLF) {
     EXPECT_EQ(result.error(), FrameDecodeError::Incomplete);
 }
 
-TEST_F(DecoderTest, InvalidCRLF) {
+TEST_F(DecoderTest, InvalidLFOnly) {
     decoder.add_upstream_data(seastar::temporary_buffer<char>("ABC\nDEF", 7));
     auto result = decoder.get_simple_string();
     EXPECT_EQ(result.error(), FrameDecodeError::Invalid);
+    EXPECT_EQ(decoder.get_current_buffer_size(), 3); // only DEF should be left
+}
+
+TEST_F(DecoderTest, InvalidCROnly) {
+    decoder.add_upstream_data(seastar::temporary_buffer<char>("ABC\rDEF", 7));
+    auto result = decoder.get_simple_string();
+    EXPECT_EQ(result.error(), FrameDecodeError::Invalid);
+    EXPECT_EQ(decoder.get_current_buffer_size(), 3); // only DEF should be left
 }
 
 TEST_F(DecoderTest, ValidCRLF) {
@@ -44,7 +52,8 @@ TEST_F(DecoderTest, ValidCRLF) {
     auto result = decoder.get_simple_string();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), "ABC");
-    EXPECT_EQ(decoder.get_cursor_position(), 4);
+    EXPECT_EQ(decoder.get_current_buffer_size(), 3);
+    EXPECT_EQ(decoder.get_cursor_position(), 0);
 }
 
 TEST_F(DecoderTest, ValidCRLFBufferEnd) {
@@ -61,7 +70,7 @@ TEST_F(DecoderTest, DoubleValid) {
     auto result = decoder.get_simple_string();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), "ABC");
-    EXPECT_EQ(decoder.get_cursor_position(), 4);
+    EXPECT_EQ(decoder.get_cursor_position(), 0);
     EXPECT_EQ(decoder.get_buffer_number(), 1);
 
     result = decoder.get_simple_string();

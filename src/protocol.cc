@@ -10,7 +10,6 @@ namespace redis {
     std::expected<std::string, FrameDecodeError> Decoder::get_simple_string() noexcept {
         auto positions = this->_read_until_crlf_simple();
         if (!positions.has_value()) {
-            // @TODO: drop faulty data if error is not FrameDecodeError::Incomplete
             return std::unexpected(positions.error());
         }
         std::string result;
@@ -18,21 +17,20 @@ namespace redis {
         // append full buffers as it
         for (; positions->first > 0; --positions->first) {
             result.append(this->_data.front().get(), this->_data.front().size());
-            this->_data.pop_front();
+            this->pop_front();
         }
 
         // now process the partial buffer.
         // -1 means we exclude CRLF
         result.append(this->_data.front().get(), positions->second - 1);
 
-        // remove the processed data or pop the current queue if we've processed all the data of this queue.
-        if (positions->second + 1 < this->get_current_buffer_size()) {
-            this->_data.front().trim_front(positions->second + 1);
-        } else {
+        // remove the processed data
+        this->trim_front(positions->second + 1);
+
+        // successful read means reset the cursor to 0 because the data has been consumed
+        if (this->get_buffer_number() != 0) {
             this->reset_positions(0);
         }
-        // successful read means reset the cursor to 0 because the data has been consumed
-        this->_data.pop_front();
         return result;
     }
 
@@ -53,12 +51,16 @@ namespace redis {
                         return std::unexpected(FrameDecodeError::Incomplete);
                     }
                     if (current_buf[this->_cursor_position + 1] != '\n') {
+                        // trim the faulty data
+                        this->trim_front(this->_cursor_position + 1);
                         return std::unexpected(FrameDecodeError::Invalid);
                     }
                     this->_cursor_position += 1; // Move the cursor at the LF of CRLF
                     return std::make_pair(buffer_index, this->_cursor_position);
                 }
                 if (current_buf[this->_cursor_position] == '\n') {
+                    // trim the faulty data
+                    this->trim_front(this->_cursor_position + 1);
                     return std::unexpected(FrameDecodeError::Invalid);
                 }
             }
@@ -73,5 +75,18 @@ namespace redis {
             throw std::out_of_range("buffer is empty or cursor position out of range");
         }
         this->_cursor_position = new_cursor_position;
+    }
+
+    void Decoder::trim_front(size_t n) {
+        if (n < this->get_current_buffer_size()) {
+            this->_data.front().trim_front(n);
+        } else {
+            this->pop_front();
+        }
+    }
+
+    void Decoder::pop_front() noexcept {
+        this->_data.pop_front();
+        this->_cursor_position = 0;
     }
 } // namespace redis
