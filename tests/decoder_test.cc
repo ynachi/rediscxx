@@ -4,7 +4,7 @@
 using namespace redis;
 class DecoderTest : public ::testing::Test {
 protected:
-    Decoder decoder;
+    BufferManager decoder;
 
     void SetUp() override {
         // Code here will be called immediately after the constructor (right before each test).
@@ -78,11 +78,11 @@ TEST_F(DecoderTest, DoubleValid) {
     EXPECT_EQ(result.value(), "DEF");
 }
 
-// TEST_F(DecoderTest, ValidCRLFAcrossBuffers) {
-//     decoder.add_upstream_data(seastar::temporary_buffer<char>("ABC", 3));
-//     decoder.add_upstream_data(seastar::temporary_buffer<char>("\r\nDEF", 5));
-//     auto result = decoder._read_until_crlf_simple();
-//     ASSERT_TRUE(result.has_value());
-//     EXPECT_EQ(result.value().first, 1); // Should point to the second buffer
-//     EXPECT_EQ(result.value().second, 2); // Position in the second buffer
-// }
+TEST_F(DecoderTest, ValidCRLFAcrossBuffers) {
+    decoder.add_upstream_data(seastar::temporary_buffer<char>("ABC", 3));
+    decoder.add_upstream_data(seastar::temporary_buffer<char>("\r\nDEF", 5));
+    auto result = decoder.get_simple_string();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value(), "ABC");
+    EXPECT_EQ(decoder.get_buffer_number(), 1);
+}
