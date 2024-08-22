@@ -53,7 +53,6 @@ TEST_F(DecoderTest, ValidCRLF) {
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), "ABC");
     EXPECT_EQ(decoder.get_current_buffer_size(), 3);
-    EXPECT_EQ(decoder.get_cursor_position(), 0);
 }
 
 TEST_F(DecoderTest, ValidCRLFBufferEnd) {
@@ -61,7 +60,6 @@ TEST_F(DecoderTest, ValidCRLFBufferEnd) {
     auto result = decoder.get_simple_string();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), "ABC");
-    EXPECT_EQ(decoder.get_cursor_position(), 0);
     EXPECT_EQ(decoder.get_buffer_number(), 0);
 }
 
@@ -70,7 +68,6 @@ TEST_F(DecoderTest, DoubleValid) {
     auto result = decoder.get_simple_string();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), "ABC");
-    EXPECT_EQ(decoder.get_cursor_position(), 0);
     EXPECT_EQ(decoder.get_buffer_number(), 1);
 
     result = decoder.get_simple_string();

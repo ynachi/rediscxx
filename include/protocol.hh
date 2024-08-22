@@ -23,7 +23,6 @@ namespace redis {
      */
     class BufferManager {
         std::deque<seastar::temporary_buffer<char>> _data;
-        size_t _cursor_position = 0;
 
         /**
          * @brief _read_until_crlf_simple tries to find the position of CRLF in the buffer list (queue number and
@@ -77,13 +76,6 @@ namespace redis {
          */
         std::expected<std::string, FrameDecodeError> get_bulk_string(size_t length) noexcept;
 
-        /**
-         * @brief reset_positions sets the cursors at the given positions. This methods checks if the new cursors
-         * are in valid boundaries and throw if not.
-         *
-         * @param new_cursor_position
-         */
-        void reset_positions(size_t new_cursor_position);
 
         /**
          * @brief get_current_buffer_size returns the size of the actual internal buffer.
@@ -116,13 +108,6 @@ namespace redis {
          * 0. Because we expect to start reading the next buffer from index 0.
          */
         void pop_front() noexcept;
-
-        /**
-         * @brief get_cursor_position returns the current position of the internal cursor.
-         *
-         * @return
-         */
-        size_t get_cursor_position() { return _cursor_position; };
     };
 } // namespace redis
 
