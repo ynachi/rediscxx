@@ -39,7 +39,7 @@ target_link_libraries(redis PRIVATE Seastar::seastar server_lib)
 # #####################################################################################################################
 # TEST TARGETS
 # #####################################################################################################################
-add_executable(decoder_test tests/decoder_test.cc)
+add_executable(decoder_test tests/protocol_test.cc)
 target_link_libraries(decoder_test GTest::gtest_main server_lib)
 add_test(NAME DecoderTest COMMAND decoder_test)
 

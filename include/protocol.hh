@@ -33,7 +33,16 @@ namespace redis {
          */
         std::expected<std::pair<size_t, size_t>, FrameDecodeError> _read_until_crlf_simple() noexcept;
 
-        std::expected<std::pair<size_t, size_t>, FrameDecodeError> _read_until_crlf_bulk(size_t n) noexcept;
+        std::expected<std::string, FrameDecodeError> _read_bulk_string(size_t n) noexcept;
+
+        std::expected<std::string, FrameDecodeError> _read_simple_string() noexcept;
+
+        /**
+         * @brief bytes_size returns the actual number of bytes in the BufferManager
+         *
+         * @return
+         */
+        size_t bytes_size() noexcept;
 
     public:
         // prevent copy because we want to match seastar::temporary_buffer<char> behavior
@@ -83,7 +92,8 @@ namespace redis {
          * @return
          */
         size_t get_current_buffer_size() {
-            assert(!_data.empty());
+            if (_data.empty())
+                return 0;
             return _data[0].size();
         };
 
@@ -96,8 +106,7 @@ namespace redis {
 
         /**
          * @brief advance advance the current buffer by n. It removes the buffer if n height than the actual buffer
-         * size. n should be the index of the next char to be processed. For example, for "ABC\r\nOLA", calling
-         * trim_front(5) would leave the buffer with "OLA".
+         * size. n should be the index of the next char to be processed.
          *
          * @param n
          */
@@ -108,6 +117,14 @@ namespace redis {
          * 0. Because we expect to start reading the next buffer from index 0.
          */
         void pop_front() noexcept;
+
+        /**
+         * @brief advance consume away (throw) n bytes from the buffer
+         *
+         * @param n
+         */
+        // @TODO, make advance returns the number of bytes effecetively advanced, in case n > number of available chars
+        void advance(size_t n) noexcept;
     };
 } // namespace redis
 
