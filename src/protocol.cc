@@ -22,7 +22,7 @@ namespace redis {
             return std::unexpected(result.error());
         }
         this->advance(length + 2);
-        return result.value();
+        return result;
     }
 
 
@@ -68,6 +68,10 @@ namespace redis {
     void BufferManager::pop_front() noexcept { this->_data.pop_front(); }
 
     std::expected<std::string, FrameDecodeError> BufferManager::_read_bulk_string(size_t n) noexcept {
+        if (this->_data.empty()) {
+            return std::unexpected(FrameDecodeError::Empty);
+        }
+        
         // Do we have enough data to decode the bulk frame ?
         if (this->bytes_size() < n + 2) {
             return std::unexpected(FrameDecodeError::Incomplete);

@@ -25,17 +25,17 @@ namespace redis {
         std::deque<seastar::temporary_buffer<char>> _data;
 
         /**
-         * @brief _read_until_crlf_simple tries to find the position of CRLF in the buffer list (queue number and
-         * cursor position. The caller can use the positions to immediately accumulate a simple string.
-         * This method does not alter the internal cursor of the decoder object.
+         * @brief _read_simple_string tries to read a simple string from the buffer pool.
+         *  In case of an error, it strip out the faulty bytes so that the next read do
+         *  not contain them.
          *
-         * @return the coordinates of CRLF (queue index, cursor position) of the next CRLF or an error
+         * @return the string without advancing the internal cursor of the buffer. The caller should
+         * make sure to consume the data read out if needed.
          */
-        std::expected<std::pair<size_t, size_t>, FrameDecodeError> _read_until_crlf_simple() noexcept;
+        std::expected<std::string, FrameDecodeError> _read_simple_string() noexcept;
 
         std::expected<std::string, FrameDecodeError> _read_bulk_string(size_t n) noexcept;
 
-        std::expected<std::string, FrameDecodeError> _read_simple_string() noexcept;
 
         /**
          * @brief bytes_size returns the actual number of bytes in the BufferManager
@@ -123,7 +123,7 @@ namespace redis {
          *
          * @param n
          */
-        // @TODO, make advance returns the number of bytes effecetively advanced, in case n > number of available chars
+        // @TODO, make advance returns the number of bytes effectively advanced, in case n > number of available chars
         void advance(size_t n) noexcept;
     };
 } // namespace redis
