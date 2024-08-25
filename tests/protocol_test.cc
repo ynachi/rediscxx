@@ -25,6 +25,7 @@ TEST_F(BufferManagerTest, GetSimpleString_IncompleteData) {
     decoder.add_upstream_data(seastar::temporary_buffer<char>("A", 1));
     auto result = decoder.get_simple_string();
     EXPECT_EQ(result.error(), FrameDecodeError::Incomplete);
+    EXPECT_EQ(decoder.get_total_size(), 1);
 }
 
 TEST_F(BufferManagerTest, GetSimpleString_IncompleteCRLF) {
@@ -125,6 +126,7 @@ TEST_F(BufferManagerTest, GetBulkString_IncompleteCRLF) {
     decoder.add_upstream_data(seastar::temporary_buffer<char>("ABC\r", 4));
     auto result = decoder.get_bulk_string(3);
     EXPECT_EQ(result.error(), FrameDecodeError::Incomplete);
+    EXPECT_EQ(decoder.get_total_size(), 4);
 }
 
 TEST_F(BufferManagerTest, GetBulkString_CanDecodeSimpleString) {

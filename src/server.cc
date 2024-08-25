@@ -1,13 +1,13 @@
 //
 // Created by ynachi on 8/17/24.
 //
+#include <connection.hh>
 #include <seastar/core/seastar.hh>
 #include <server.hh>
-#include <connection.hh>
 
 namespace redis {
-    Server::Server(const std::string &ip_addr, const u_int16_t port, const bool reuse_addr)
-        : _logger(make_lw_shared(seastar::logger("server"))) {
+    Server::Server(const std::string &ip_addr, const u_int16_t port, const bool reuse_addr) :
+        _logger(make_lw_shared(seastar::logger("server"))) {
         seastar::listen_options listen_options;
         listen_options.reuse_address = reuse_addr;
         listen_options.lba = seastar::server_socket::load_balancing_algorithm::default_;
@@ -22,8 +22,8 @@ namespace redis {
         }
     }
 
-    Server::Server(Server &&other) noexcept: _logger(std::move(other._logger)), _listener(std::move(other._listener)) {
-    }
+    Server::Server(Server &&other) noexcept :
+        _logger(std::move(other._logger)), _listener(std::move(other._listener)) {}
 
     seastar::future<> Server::listen() {
         while (true) {
@@ -33,12 +33,10 @@ namespace redis {
                 auto const conn = Connection::create(std::move(accept_result), _logger);
                 // we use void because we do not want to wait for the future, because connections
                 // should be processed as soon as we get them.
-                (void) seastar::futurize_invoke([conn] {
-                    return conn->process_frames();
-                });
+                (void) seastar::futurize_invoke([conn] { return conn->process_frames(); });
             } catch (std::exception &e) {
                 this->_logger->error("failed to accept a new connection to the server", e.what());
             }
         }
     }
-}
+} // namespace redis

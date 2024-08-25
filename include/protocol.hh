@@ -4,6 +4,7 @@
 #include <deque>
 #include <expected>
 #include <seastar/core/temporary_buffer.hh>
+#include "frame.hh"
 
 namespace redis {
 
@@ -11,6 +12,8 @@ namespace redis {
         Invalid,
         Incomplete,
         Empty,
+        Atoi,
+        WrongArgsType, // calling a function with unexpected arguments
     };
 
     /**
@@ -35,14 +38,6 @@ namespace redis {
         std::expected<std::string, FrameDecodeError> _read_simple_string() noexcept;
 
         std::expected<std::string, FrameDecodeError> _read_bulk_string(size_t n) noexcept;
-
-
-        /**
-         * @brief bytes_size returns the actual number of bytes in the BufferManager
-         *
-         * @return
-         */
-        size_t bytes_size() noexcept;
 
     public:
         // prevent copy because we want to match seastar::temporary_buffer<char> behavior
@@ -125,6 +120,37 @@ namespace redis {
          */
         // @TODO, make advance returns the number of bytes effectively advanced, in case n > number of available chars
         void advance(size_t n) noexcept;
+
+        std::expected<int64_t, FrameDecodeError> get_int() noexcept;
+
+        /**
+         * @brief get_total_size returns the actual number of bytes in the BufferManager
+         *
+         * @return
+         */
+        size_t get_total_size() noexcept;
+
+        /**
+         * @brief get_simple_frame_variant decodes a frame which has a simple string as internal data.
+         * So for now, it decodes SimpleString, SimpleError, BigNumber.
+         *
+         * @return
+         */
+        std::expected<Frame, FrameDecodeError> get_simple_frame_variant(FrameID) noexcept;
+
+        /**
+         * @brief get_bulk_frame_variant decodes a frame which has a bulk string as internal data.
+         * So for now, it decodes BulkString, BulkError.
+         *
+         * @return
+         */
+        std::expected<Frame, FrameDecodeError> get_bulk_frame_variant(FrameID) noexcept;
+
+        std::expected<Frame, FrameDecodeError> get_integer_frame() noexcept;
+
+        std::expected<Frame, FrameDecodeError> get_boolean_frame() noexcept;
+
+        std::expected<Frame, FrameDecodeError> get_null_frame() noexcept;
     };
 } // namespace redis
 

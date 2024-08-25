@@ -5,6 +5,7 @@
 
 namespace redis {
     seastar::future<> Connection::process_frames() {
+        std::cout << "entered process frames" << "\n";
         // the caller and this method needs to make sure the connection
         // object is not out of scope, so use a shared reference from
         // the current connection.
@@ -19,11 +20,22 @@ namespace redis {
                 self->_logger->debug("connection was closed by the user");
                 break;
             }
-            co_await self->_output_stream.write(std::move(tmp_read_buf));
+            this->_buffer.add_upstream_data(std::move(tmp_read_buf));
+            auto data = this->_buffer.get_simple_string();
+            std::cout << data.value() << "\n";
+            if (data.error() == FrameDecodeError::Incomplete) {
+                continue;
+            }
+            if (!data.has_value()) {
+                self->_logger->debug("error decoding frame");
+                continue;
+            }
+            const auto &ans = data.value();
+            std::cout << data.value() << "\n";
+            co_await self->_output_stream.write(data.value());
             co_await self->_output_stream.flush();
         }
         co_await self->_output_stream.close();
         co_return;
     }
-}
-
+} // namespace redis
