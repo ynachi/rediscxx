@@ -5,13 +5,18 @@
 #ifndef SERVER_HH
 #define SERVER_HH
 
-#include <seastar/net/api.hh>
-#include <seastar/util/log.hh>
+#include <boost/asio.hpp>
 
-namespace redis {
-    class Server {
+namespace redis
+{
+    using boost::asio::awaitable;
+    using boost::asio::detached;
+    using boost::asio::ip::tcp;
+
+    class Server
+    {
     public:
-        Server(const std::string &ip_addr, u_int16_t port, bool reuse_addr);
+        Server(const tcp::endpoint &endpoint, bool reuse_addr);
 
         Server(const Server &) = delete;
 
@@ -21,12 +26,18 @@ namespace redis {
 
         Server &operator=(Server &&) noexcept;
 
-        seastar::future<> listen();
+        awaitable<void> listen();
+
+        void run()
+        {
+            co_spawn(_io_ctx, listen(), detached);
+            _io_ctx.run();
+        }
 
     private:
-        seastar::lw_shared_ptr<seastar::logger> _logger;
-        seastar::server_socket _listener;
+        boost::asio::io_context _io_ctx;
+        boost::asio::ip::tcp::acceptor _acceptor;
     };
-} // namespace redis
+}  // namespace redis
 
-#endif // SERVER_HH
+#endif  // SERVER_HH
