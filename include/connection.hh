@@ -45,7 +45,7 @@ namespace redis
 
     private:
         tcp::socket _socket;
-        BufferManager _buffer;
+        ProtocolDecoder _buffer;
     };
 }  // namespace redis
 

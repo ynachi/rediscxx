@@ -53,7 +53,7 @@ target_link_libraries(redis PRIVATE Seastar::seastar server_lib resp3_lib)
 # #####################################################################################################################
 enable_testing()
 add_executable(protocol_test tests/protocol_test.cc)
-target_link_libraries(protocol_test GTest::gtest_main server_lib)
+target_link_libraries(protocol_test GTest::gtest_main server_lib resp3_lib)
 add_test(NAME protocol_test COMMAND protocol_test)
 
 include(GNUInstallDirs)
