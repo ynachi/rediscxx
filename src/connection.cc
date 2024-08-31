@@ -12,20 +12,17 @@ namespace redis
 
     awaitable<void> Connection::process_frames()
     {
-        FrameDecoder decoder;
-        // while line looks unused, it is here to keep the connection object alive thought the lifetime of this
-        // function.
         auto const self = this->get_ptr();
         for (;;)
         {
-            auto buffer_space = decoder.get_buffer().prepare(1024);
+            auto buffer_space = self->decoder_.get_buffer().prepare(1024);
             const auto n = co_await _socket.async_read_some(buffer_space, use_awaitable);
-            decoder.get_buffer().commit(n);  // Commit the read bytes to the buffer
+            self->decoder_.get_buffer().commit(n);  // Commit the read bytes to the buffer
             std::cout << "First read: " << n << " bytes" << std::endl;
-            std::cout << "Total bytes after first read: " << decoder.get_buffer().size() << std::endl;
+            std::cout << "Total bytes after first read: " << self->decoder_.get_buffer().size() << std::endl;
                 while (true)
                 {
-                    if (auto output = decoder.try_get_string(); output.has_value()) {
+                    if (auto output = this->decoder_.get_simple_string(); output.has_value()) {
                         std::cout << "decoded string: " << output.value() << "\n" << std::flush;
                         co_await async_write(_socket, boost::asio::buffer(output.value() + "\n"), use_awaitable);
                         std::cout << "Done writing back to socket\n";

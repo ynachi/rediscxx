@@ -32,7 +32,7 @@ namespace redis
             return std::make_shared<Connection>(Private(), std::move(socket));
         }
 
-        Connection(Private, tcp::socket socket) noexcept : _socket(std::move(socket)), _buffer() {}
+        Connection(Private, tcp::socket socket) noexcept : _socket(std::move(socket)) {}
 
         // Delete all other constructors to enforce factory method usage
         Connection(const Connection &) = delete;
@@ -45,7 +45,7 @@ namespace redis
 
     private:
         tcp::socket _socket;
-        ProtocolDecoder _buffer;
+        ProtocolDecoder decoder_;
     };
 }  // namespace redis
 
