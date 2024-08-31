@@ -10,38 +10,42 @@ namespace redis
     using boost::asio::use_awaitable;
     using boost::asio::ip::tcp;
 
-    std::string process_data(const std::string& input)
-    {
-        std::string output = input;
-        std::ranges::transform(output, output.begin(), ::toupper);
-        return output;
-    }
-
     awaitable<void> Connection::process_frames()
     {
+        FrameDecoder decoder;
+        // while line looks unused, it is here to keep the connection object alive thought the lifetime of this
+        // function.
         auto const self = this->get_ptr();
-        boost::asio::streambuf streambuf;
         for (;;)
         {
-            const auto n = co_await _socket.async_read_some(buffer(streambuf.prepare(1024)), use_awaitable);
-            streambuf.commit(n);  // Commit the read bytes to the buffer
+            auto buffer_space = decoder.get_buffer().prepare(1024);
+            const auto n = co_await _socket.async_read_some(buffer_space, use_awaitable);
+            decoder.get_buffer().commit(n);  // Commit the read bytes to the buffer
             std::cout << "First read: " << n << " bytes" << std::endl;
-            std::cout << "Total bytes after first read: " << streambuf.size() << std::endl;
-                std::istream is(&streambuf);
-                std::string line;
-                while (std::getline(is, line))
+            std::cout << "Total bytes after first read: " << decoder.get_buffer().size() << std::endl;
+                while (true)
                 {
-                    std::string processed_data = process_data(line);
-                    std::cout << processed_data << "\n" << std::flush;
-                    co_await async_write(_socket, boost::asio::buffer(processed_data + "\n"), use_awaitable);
+                    if (auto output = decoder.try_get_string(); output.has_value()) {
+                        std::cout << "decoded string: " << output.value() << "\n" << std::flush;
+                        co_await async_write(_socket, boost::asio::buffer(output.value() + "\n"), use_awaitable);
+                        std::cout << "Done writing back to socket\n";
+                    } else {
+                        break;
+                    }
                 }
 
-                if (is.eof())
-                {
-                    std::cout << "connection closed by client" << std::flush;
-                    streambuf.consume(streambuf.size());
-                    co_return;
-                }
+            if (n == 0) {
+                std::cout << "connection closed by client\n";
+                co_return;
+            }
+
+
+                // if (is.eof())
+                // {
+                //     std::cout << "connection closed by client" << std::flush;
+                //     streambuf.consume(streambuf.size());
+                //     co_return;
+                // }
         }
     }
 }  // namespace redis
