@@ -1,7 +1,7 @@
 #include <iostream>
 #include <server.hh>
 
-int main(const int argc, char **argv)
+int main()
 {
     using boost::asio::awaitable;
     using boost::asio::co_spawn;
@@ -12,9 +12,9 @@ int main(const int argc, char **argv)
 
     try
     {
-        boost::asio::io_context ctx;
+        boost::asio::io_context ctx(8);
 
-        boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::address::from_string("127.0.0.1"), 9292);
+        const tcp::endpoint endpoint(boost::asio::ip::address::from_string("127.0.0.1"), 9292);
 
         auto server = redis::Server(endpoint, true);
         server.run();

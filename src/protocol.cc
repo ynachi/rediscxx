@@ -52,43 +52,46 @@ namespace redis {
         return std::unexpected(FrameDecodeError::Incomplete);
     }
 
-    // std::expected<std::string, FrameDecodeError> ProtocolDecoder::_read_bulk_string(size_t n) noexcept {
-    //     if (this->_data.empty()) {
-    //         return std::unexpected(FrameDecodeError::Empty);
-    //     }
-    //
-    //     // Do we have enough data to decode the bulk frame ?
-    //     if (this->get_total_size() < n + 2) {
-    //         return std::unexpected(FrameDecodeError::Incomplete);
-    //     }
-    //
-    //     // Let's actually read the data we know is enough
-    //     std::string str_read;
-    //     size_t buffer_index{0};
-    //     for (; buffer_index < this->get_buffer_number(); ++buffer_index) {
-    //         auto &current_buf = _data[buffer_index];
-    //         if (str_read.size() + current_buf.size() <= n + 2) {
-    //             str_read.append(current_buf.get(), current_buf.size());
-    //         } else {
-    //             break;
-    //         }
-    //     }
-    //
-    //     // At this point, we know the next buffer has enough data for the rest to decode
-    //     size_t bytes_num_left = n + 2 - str_read.size();
-    //     str_read.append(this->_data[buffer_index].get(), bytes_num_left);
-    //     auto maybe_crlf = str_read.substr(str_read.length() - 2, 2);
-    //
-    //     // now check if it is ending with CRLF
-    //     if (maybe_crlf != "\r\n") {
-    //         // throw away the faulty bytes
-    //         this->advance(n + 2);
-    //         return std::unexpected(FrameDecodeError::Invalid);
-    //     }
-    //
-    //     str_read.resize(str_read.size() - 2);
-    //     return str_read;
-    // }
+    std::expected<std::string, FrameDecodeError> ProtocolDecoder::_read_bulk_string(const size_t n) noexcept {
+        if (this->buffer_.size() == 0) {
+            return std::unexpected(FrameDecodeError::Empty);
+        }
+
+        // Do we have enough data to decode the bulk frame?
+        if (this->buffer_.size() < n + 2) {
+            return std::unexpected(FrameDecodeError::Incomplete);
+        }
+
+        // Let's actually read the data we know is enough
+        const auto internal_buffers = this->buffer_.data();
+        const auto start = buffers_begin(internal_buffers);
+        const auto end = buffers_end(internal_buffers);
+        std::string str_read;
+        size_t buffer_index{0};
+        for (; buffer_index < this->get_buffer_number(); ++buffer_index) {
+            auto &current_buf = _data[buffer_index];
+            if (str_read.size() + current_buf.size() <= n + 2) {
+                str_read.append(current_buf.get(), current_buf.size());
+            } else {
+                break;
+            }
+        }
+
+        // At this point, we know the next buffer has enough data for the rest to decode
+        size_t bytes_num_left = n + 2 - str_read.size();
+        str_read.append(this->_data[buffer_index].get(), bytes_num_left);
+        auto maybe_crlf = str_read.substr(str_read.length() - 2, 2);
+
+        // now check if it is ending with CRLF
+        if (maybe_crlf != "\r\n") {
+            // throw away the faulty bytes
+            this->advance(n + 2);
+            return std::unexpected(FrameDecodeError::Invalid);
+        }
+
+        str_read.resize(str_read.size() - 2);
+        return str_read;
+    }
 
     std::expected<std::string, FrameDecodeError> ProtocolDecoder::get_simple_string() noexcept {
         auto result = this->_read_simple_string();
