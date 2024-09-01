@@ -68,19 +68,25 @@ TEST_F(BufferManagerTest, GetSimpleString_IncompleteData) {
 // ****************
 // get_bulk_string
 // **************
-// TEST_F(BufferManagerTest, GetBulkString_EmptyData) {
-//     auto result = decoder.get_bulk_string(6);
-//     EXPECT_EQ(result.error(), FrameDecodeError::Empty);
-// }
-//
-// TEST_F(BufferManagerTest, GetBulkString_IncompleteData) {
-//     // @TODO: we should return an error in this case, because the frame is well formed by
-//     // @TODO the actual data is not enough to decode the frame.
-//     decoder.add_upstream_data(seastar::temporary_buffer<char>("A\r\n", 3));
-//     auto result = decoder.get_bulk_string(2);
-//     EXPECT_EQ(result.error(), FrameDecodeError::Incomplete);
-// }
-//
+TEST_F(BufferManagerTest, GetBulkString_EmptyData) {
+    auto result = decoder.get_bulk_string(6);
+    EXPECT_EQ(result.error(), FrameDecodeError::Empty);
+}
+
+TEST_F(BufferManagerTest, GetBulkString_IncompleteData) {
+    auto &buffer = decoder.get_buffer();
+    buffer.push_back('A');
+    buffer.push_back('\r');
+    buffer.push_back('\n');
+    // @TODO: fix this to return an invalid error instead
+    auto result = decoder.get_bulk_string(2);
+    EXPECT_EQ(result.error(), FrameDecodeError::Incomplete);
+
+    const auto result1 = decoder.get_bulk_string(1);
+    EXPECT_EQ(result1.value(), "A") <<"get_bulk_string: can decode a simple 1 byte frame";
+    EXPECT_EQ(buffer.size(), 0) << R"(get_bulk_string: should consume the character and CRLF)";
+}
+
 // TEST_F(BufferManagerTest, GetBulkString_IncompleteCRLF) {
 //     decoder.add_upstream_data(seastar::temporary_buffer<char>("ABC\r", 4));
 //     auto result = decoder.get_bulk_string(3);

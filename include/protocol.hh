@@ -60,10 +60,10 @@ namespace redis {
 
         std::vector<char>& get_buffer() noexcept {return buffer_;};
 
-        void consume(const int64_t n)
+        void consume(const size_t n)
         {
             assert(n <= buffer_.size());
-            buffer_.erase(buffer_.begin(), buffer_.begin() + n);
+            buffer_.erase(buffer_.begin(), buffer_.begin() + static_cast<int>(n));
         }
 
         /**
