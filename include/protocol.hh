@@ -36,7 +36,7 @@ namespace redis {
      * (which is actually queue.front()). In case of a faulty frame, the 'bad' data ois trimmed out.
      */
     class ProtocolDecoder {
-        boost::asio::streambuf buffer_;
+        std::vector<char> buffer_;
 
         /**
          * @brief _read_simple_string tries to read a simple string from the buffer pool.
@@ -58,7 +58,13 @@ namespace redis {
         ProtocolDecoder(ProtocolDecoder &&other) noexcept = delete;
         ProtocolDecoder &operator=(ProtocolDecoder &&other) noexcept = delete;
 
-        boost::asio::streambuf& get_buffer() noexcept {return buffer_;};
+        std::vector<char>& get_buffer() noexcept {return buffer_;};
+
+        void consume(const int64_t n)
+        {
+            assert(n <= buffer_.size());
+            buffer_.erase(buffer_.begin(), buffer_.begin() + n);
+        }
 
         /**
          * @brief Get_simple_string tries to decode a simple string as defined in RESP3.
@@ -105,38 +111,6 @@ namespace redis {
         std::expected<Frame, FrameDecodeError> get_boolean_frame() noexcept;
 
         std::expected<Frame, FrameDecodeError> get_null_frame() noexcept;
-    };
-
-    class FrameDecoder
-    {
-    public:
-        std::optional<std::string> try_get_string() noexcept
-        {
-            std::cout << "try_get_string was called\n" << std::endl;
-            std::istream is(&_buffer);
-            if (std::string line; std::getline(is, line))
-            {
-                std::string output = process_data(line);
-                //const std::size_t consumed_length = line.length() + 1;
-                //_buffer.consume(consumed_length);
-
-                return output;
-            }
-            //@TODO: should check and return eof error variant to the caller
-            // if (is.eof())
-            // {
-            //     std::cout << "connection closed by client" << std::flush;
-            //     streambuf.consume(streambuf.size());
-            //     co_return;
-            // }
-            //
-            return std::nullopt;
-        };
-
-        boost::asio::streambuf& get_buffer() noexcept {return _buffer;};
-
-    private:
-        boost::asio::streambuf _buffer;
     };
 } // namespace redis
 

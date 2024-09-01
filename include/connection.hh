@@ -46,6 +46,7 @@ namespace redis
     private:
         tcp::socket _socket;
         ProtocolDecoder decoder_;
+        size_t read_chunk_size_ = 1024;
     };
 }  // namespace redis
 

@@ -15,9 +15,10 @@ namespace redis
     awaitable<void> Connection::process_frames()
     {
         auto const self = this->get_ptr();
+        boost::asio::dynamic_vector_buffer buffer(self->decoder_.get_buffer());
         for (;;)
         {
-            auto buffer_space = self->decoder_.get_buffer().prepare(1024);
+            auto buffer_space = buffer.prepare(self->read_chunk_size_);
             const auto [e, n] = co_await _socket.async_read_some(buffer_space, use_nothrow_awaitable);
             if ((e && e == boost::asio::error::eof) || n == 0)
             {
@@ -29,7 +30,7 @@ namespace redis
                 std::cout << "connection::process_frames: error reading from socket " << e.what();
                 continue;
             }
-            self->decoder_.get_buffer().commit(n);  // Commit the read bytes to the buffer
+            buffer.commit(n);  // Commit the read bytes to the buffer
             std::cout << "First read: " << n << " bytes" << std::endl;
             std::cout << "Total bytes after first read: " << self->decoder_.get_buffer().size() << std::endl;
                 while (true)

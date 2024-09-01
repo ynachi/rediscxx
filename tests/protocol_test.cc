@@ -15,6 +15,9 @@ protected:
     }
 };
 
+void append_str(std::vector<char>& vec, const char* str) {
+    vec.insert(vec.end(), str, str + std::strlen(str));
+}
 
 TEST_F(BufferManagerTest, GetSimpleString_EmptyData) {
     auto result = decoder.get_simple_string();
@@ -23,38 +26,43 @@ TEST_F(BufferManagerTest, GetSimpleString_EmptyData) {
 
 TEST_F(BufferManagerTest, GetSimpleString_IncompleteData) {
     auto &buffer = decoder.get_buffer();
-    std::ostream os(&buffer);
-    os << "A";
+    buffer.push_back('A');
     auto result = decoder.get_simple_string();
     EXPECT_EQ(result.error(), FrameDecodeError::Incomplete) <<"frame should be terminated by CRLF";
     EXPECT_EQ(buffer.size(), 1) << R"(buffer should not be altered when hitting "incomplete" error type)";
 
-    os << "BC\r"; // os is now "ABC\r"
-    auto result2 = decoder.get_simple_string();
-    EXPECT_EQ(result2.error(), FrameDecodeError::Incomplete) << "single CR at the end probably means incomplete frame";
-    EXPECT_EQ(buffer.size(), 4) << R"(buffer should not be altered when hitting "incomplete" error type)";
+     append_str(buffer, "BC\r"); // os is now "ABC\r"
+     auto result2 = decoder.get_simple_string();
+     EXPECT_EQ(result2.error(), FrameDecodeError::Incomplete) << "single CR at the end probably means incomplete frame";
+     EXPECT_EQ(buffer.size(), 4) << R"(buffer should not be altered when hitting "incomplete" error type)";
 
-    os << "DEF"; // os is now "ABC\rDEF"
-    auto result3 = decoder.get_simple_string();
-    EXPECT_EQ(result3.error(), FrameDecodeError::Invalid) << "isolated CR in a simple frame is an error";
-    EXPECT_EQ(buffer.size(), 3) << R"(should strip out "ABC\r" and let "DEF")";
+     append_str(buffer, "DEF"); // os is now "ABC\rDEF"
+     auto result3 = decoder.get_simple_string();
+     EXPECT_EQ(result3.error(), FrameDecodeError::Invalid) << "isolated CR in a simple frame is an error";
+     EXPECT_EQ(buffer.size(), 3) << R"(should strip out "ABC\r" and let "DEF")";
 
-    os << "\nABC\r\nDEF\r\n55\r\n"; // os is now "DEF\nABC\r\nDEF\r\n55\r\n"
+    append_str(buffer, "\nDEF"); // os is now "DEF\nDEF"
     auto result4 = decoder.get_simple_string();
     EXPECT_EQ(result4.error(), FrameDecodeError::Invalid) << "isolated LF in a simple frame is an error";
-    EXPECT_EQ(buffer.size(), 14) << R"(should strip out "DEF\n")";
+    EXPECT_EQ(buffer.size(), 3) << R"(should strip out "DEF\n" and let "DEF")";
 
-    auto result5 = decoder.get_simple_string();
-    EXPECT_EQ(result5.value(), "ABC") << "can decode a valid frame";
-    EXPECT_EQ(buffer.size(), 9) << R"(should strip out "ABC\r\n", notice CRLF is included)";
+     append_str(buffer, "\nABC\r\nDEF\r\n55\r\n"); // os is now "DEF\nABC\r\nDEF\r\n55\r\n"
+     auto result5 = decoder.get_simple_string();
+     EXPECT_EQ(result5.error(), FrameDecodeError::Invalid) << "isolated LF in a simple frame is an error";
+     EXPECT_EQ(buffer.size(), 14) << R"(should strip out "DEF\n")";
 
-    auto result6 = decoder.get_simple_string();
-    EXPECT_EQ(result6.value(), "DEF") << "can decode a valid frame after another in the same stream";
-    EXPECT_EQ(buffer.size(), 4) << R"(should strip out "DEF\r\n", notice CRLF is included)";
+     auto result6 = decoder.get_simple_string();
+     EXPECT_EQ(result6.value(), "ABC") << "can decode a valid frame";
+     EXPECT_EQ(buffer.size(), 9) << R"(should strip out "ABC\r\n", notice CRLF is included)";
 
-    auto result7 = decoder.get_simple_string();
-    EXPECT_EQ(result7.value(), "55") << "can decode a valid frame at the end of a stream";
-    EXPECT_EQ(buffer.size(), 0) << R"(should strip out "55\r\n", notice CRLF is included)";
+     auto result7 = decoder.get_simple_string();
+     EXPECT_EQ(result7.value(), "DEF") << "can decode a valid frame after another in the same stream";
+     EXPECT_EQ(buffer.size(), 4) << R"(should strip out "DEF\r\n", notice CRLF is included)";
+     std::cout << buffer.size() << std::endl;
+
+     auto result8 = decoder.get_simple_string();
+     EXPECT_EQ(result8.value(), "55") << "can decode a valid frame at the end of a stream";
+     EXPECT_EQ(buffer.size(), 0) << R"(should strip out "55\r\n", notice CRLF is included)";
 }
 
 // ****************

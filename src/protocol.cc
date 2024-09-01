@@ -7,43 +7,34 @@
 namespace redis {
 
     std::expected<std::string, FrameDecodeError> ProtocolDecoder::_read_simple_string() noexcept {
-        if (this->buffer_.size() == 0)
+        if (this->buffer_.empty())
         {
             return std::unexpected(FrameDecodeError::Empty);
         }
 
-        const auto internal_buffers = this->buffer_.data();
-        const auto start = buffers_begin(internal_buffers);
-        const auto end = buffers_end(internal_buffers);
+        const size_t size = this->buffer_.size();
 
-        auto it = start;
-        std::string result;
-
-        while (it != end)
+        for (int i = 0; i < size; ++i)
         {
-            const auto next = std::next(it);
-            switch (const auto c = *it)
+            switch (this->buffer_[i])
             {
                 case '\r':
-                    if (next == end)
+                    if (i + 1 > size - 1)
                     {
-                        if (*it == '\r')
-                            // Incomplete sequence: end of buffer reached, no consumption
                         return std::unexpected(FrameDecodeError::Incomplete);
                     }
-                    if (*next != '\n')
+                    if (this->buffer_[i+1] != '\n')
                     {
-                        this->buffer_.consume(std::distance(start, next));
+                        // Invalid frame. Throw away up to \r included
+                        this->consume(i+1);
                         return std::unexpected(FrameDecodeError::Invalid);
                     }
-                    return result;
+                    return std::string(this->buffer_.begin(), this->buffer_.begin() + i);
                 case '\n':
-                    // Invalid: isolated LF, consume up to the LF
-                    this->buffer_.consume(std::distance(start, it) + 1);
+                    // Invalid: isolated LF, consume up to the LF included
+                    this->consume(i+1);
                     return std::unexpected(FrameDecodeError::Invalid);
-                default:
-                    result.push_back(c);
-                    ++it;
+                default:;
             }
 
         }
@@ -52,53 +43,53 @@ namespace redis {
         return std::unexpected(FrameDecodeError::Incomplete);
     }
 
-    std::expected<std::string, FrameDecodeError> ProtocolDecoder::_read_bulk_string(const size_t n) noexcept {
-        if (this->buffer_.size() == 0) {
-            return std::unexpected(FrameDecodeError::Empty);
-        }
-
-        // Do we have enough data to decode the bulk frame?
-        if (this->buffer_.size() < n + 2) {
-            return std::unexpected(FrameDecodeError::Incomplete);
-        }
-
-        // Let's actually read the data we know is enough
-        const auto internal_buffers = this->buffer_.data();
-        const auto start = buffers_begin(internal_buffers);
-        const auto end = buffers_end(internal_buffers);
-        std::string str_read;
-        size_t buffer_index{0};
-        for (; buffer_index < this->get_buffer_number(); ++buffer_index) {
-            auto &current_buf = _data[buffer_index];
-            if (str_read.size() + current_buf.size() <= n + 2) {
-                str_read.append(current_buf.get(), current_buf.size());
-            } else {
-                break;
-            }
-        }
-
-        // At this point, we know the next buffer has enough data for the rest to decode
-        size_t bytes_num_left = n + 2 - str_read.size();
-        str_read.append(this->_data[buffer_index].get(), bytes_num_left);
-        auto maybe_crlf = str_read.substr(str_read.length() - 2, 2);
-
-        // now check if it is ending with CRLF
-        if (maybe_crlf != "\r\n") {
-            // throw away the faulty bytes
-            this->advance(n + 2);
-            return std::unexpected(FrameDecodeError::Invalid);
-        }
-
-        str_read.resize(str_read.size() - 2);
-        return str_read;
-    }
+    // std::expected<std::string, FrameDecodeError> ProtocolDecoder::_read_bulk_string(const size_t n) noexcept {
+    //     if (this->buffer_.size() == 0) {
+    //         return std::unexpected(FrameDecodeError::Empty);
+    //     }
+    //
+    //     // Do we have enough data to decode the bulk frame?
+    //     if (this->buffer_.size() < n + 2) {
+    //         return std::unexpected(FrameDecodeError::Incomplete);
+    //     }
+    //
+    //     // Let's actually read the data we know is enough
+    //     const auto internal_buffers = this->buffer_.data();
+    //     const auto start = buffers_begin(internal_buffers);
+    //     const auto end = buffers_end(internal_buffers);
+    //     std::string str_read;
+    //     size_t buffer_index{0};
+    //     for (; buffer_index < this->get_buffer_number(); ++buffer_index) {
+    //         auto &current_buf = _data[buffer_index];
+    //         if (str_read.size() + current_buf.size() <= n + 2) {
+    //             str_read.append(current_buf.get(), current_buf.size());
+    //         } else {
+    //             break;
+    //         }
+    //     }
+    //
+    //     // At this point, we know the next buffer has enough data for the rest to decode
+    //     size_t bytes_num_left = n + 2 - str_read.size();
+    //     str_read.append(this->_data[buffer_index].get(), bytes_num_left);
+    //     auto maybe_crlf = str_read.substr(str_read.length() - 2, 2);
+    //
+    //     // now check if it is ending with CRLF
+    //     if (maybe_crlf != "\r\n") {
+    //         // throw away the faulty bytes
+    //         this->advance(n + 2);
+    //         return std::unexpected(FrameDecodeError::Invalid);
+    //     }
+    //
+    //     str_read.resize(str_read.size() - 2);
+    //     return str_read;
+    // }
 
     std::expected<std::string, FrameDecodeError> ProtocolDecoder::get_simple_string() noexcept {
         auto result = this->_read_simple_string();
         if (!result.has_value()) {
             return std::unexpected(result.error());
         }
-        this->buffer_.consume(result->size() + 2);
+        this->consume(result->size() + 2);
         return result;
     }
 
