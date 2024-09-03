@@ -122,3 +122,20 @@ TEST_F(BufferManagerTest, GetInt)
     auto result2 = decoder.get_int();
     EXPECT_EQ(result2.error(), FrameDecodeError::Atoi);
 }
+
+TEST_F(BufferManagerTest, get_simple_frame_variant)
+{
+    auto& buffer = decoder.get_buffer();
+    append_str(buffer, "ABC\r\na26\r\n");
+
+    auto result = decoder.get_simple_frame_variant(FrameID::SimpleString);
+    auto ans = Frame{FrameID::SimpleString, "ABC"};
+    EXPECT_EQ(result.value(), ans);
+
+    auto result1 = decoder.get_simple_frame_variant(FrameID::Integer);
+    EXPECT_EQ(result1.error(), FrameDecodeError::WrongArgsType);
+
+    auto result2 = decoder.get_simple_frame_variant(FrameID::SimpleError);
+    auto ans2 = Frame{FrameID::SimpleError, "a26"};
+    EXPECT_EQ(result2.value(), ans2);
+}
