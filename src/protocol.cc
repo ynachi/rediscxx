@@ -1,9 +1,11 @@
 #include <protocol.hh>
 #include <string>
 
-namespace redis {
+namespace redis
+{
 
-    std::expected<std::string, FrameDecodeError> ProtocolDecoder::_read_simple_string() noexcept {
+    std::expected<std::string, FrameDecodeError> ProtocolDecoder::_read_simple_string() noexcept
+    {
         if (this->buffer_.empty())
         {
             return std::unexpected(FrameDecodeError::Empty);
@@ -20,41 +22,43 @@ namespace redis {
                     {
                         return std::unexpected(FrameDecodeError::Incomplete);
                     }
-                    if (this->buffer_[i+1] != '\n')
+                    if (this->buffer_[i + 1] != '\n')
                     {
                         // Invalid frame. Throw away up to \r included
-                        this->consume(i+1);
+                        this->consume(i + 1);
                         return std::unexpected(FrameDecodeError::Invalid);
                     }
                     return std::string(this->buffer_.begin(), this->buffer_.begin() + i);
                 case '\n':
                     // Invalid: isolated LF, consume up to the LF included
-                    this->consume(i+1);
+                    this->consume(i + 1);
                     return std::unexpected(FrameDecodeError::Invalid);
                 default:;
             }
-
         }
 
         // Incomplete sequence: end of buffer reached without finding CRLF
         return std::unexpected(FrameDecodeError::Incomplete);
     }
 
-    std::expected<std::string, FrameDecodeError> ProtocolDecoder::_read_bulk_string(const size_t n) noexcept {
-        if (this->buffer_.empty()) {
+    std::expected<std::string, FrameDecodeError> ProtocolDecoder::_read_bulk_string(const size_t n) noexcept
+    {
+        if (this->buffer_.empty())
+        {
             return std::unexpected(FrameDecodeError::Empty);
         }
 
         // Do we have enough data to decode the bulk frame?
-        if (this->buffer_.size() < n + 2) {
+        if (this->buffer_.size() < n + 2)
+        {
             return std::unexpected(FrameDecodeError::Incomplete);
         }
 
-        if (this->buffer_[n] != '\r' || this->buffer_[n+1] != '\n')
+        if (this->buffer_[n] != '\r' || this->buffer_[n + 1] != '\n')
         {
             // remove n+2 bytes which were supposed to be the frame we wanted to decode
             // because they are part of a faulty frame.
-            this->consume(n+2);
+            this->consume(n + 2);
             return std::unexpected(FrameDecodeError::Invalid);
         }
 
@@ -62,18 +66,22 @@ namespace redis {
         return std::string(this->buffer_.begin(), this->buffer_.begin() + n);
     }
 
-    std::expected<std::string, FrameDecodeError> ProtocolDecoder::get_simple_string() noexcept {
+    std::expected<std::string, FrameDecodeError> ProtocolDecoder::get_simple_string() noexcept
+    {
         auto result = this->_read_simple_string();
-        if (!result.has_value()) {
+        if (!result.has_value())
+        {
             return std::unexpected(result.error());
         }
         this->consume(result->size() + 2);
         return result;
     }
 
-    std::expected<std::string, FrameDecodeError> ProtocolDecoder::get_bulk_string(size_t length) noexcept {
+    std::expected<std::string, FrameDecodeError> ProtocolDecoder::get_bulk_string(const size_t length) noexcept
+    {
         auto result = this->_read_bulk_string(length);
-        if (!result.has_value()) {
+        if (!result.has_value())
+        {
             return std::unexpected(result.error());
         }
         this->consume(length + 2);
@@ -107,19 +115,24 @@ namespace redis {
     //     }
     // }
 
-    // std::expected<int64_t, FrameDecodeError> ProtocolDecoder::get_int() noexcept {
-    //     auto str_result = this->get_simple_string();
-    //     if (!str_result.has_value()) {
-    //         return std::unexpected(str_result.error());
-    //     }
-    //     try {
-    //         int64_t result = std::stoll(str_result.value());
-    //         return result;
-    //     } catch (const std::exception &_) {
-    //         //@TODO log the error
-    //         return std::unexpected(FrameDecodeError::Atoi);
-    //     }
-    // }
+    std::expected<int64_t, FrameDecodeError> ProtocolDecoder::get_int() noexcept
+    {
+        auto str_result = this->get_simple_string();
+        if (!str_result.has_value())
+        {
+            return std::unexpected(str_result.error());
+        }
+        try
+        {
+            int64_t result = std::stoll(str_result.value());
+            return result;
+        }
+        catch (const std::exception &_)
+        {
+            //@TODO log the error
+            return std::unexpected(FrameDecodeError::Atoi);
+        }
+    }
 
     // void ProtocolDecoder::trim_front(size_t n) {
     //     if (n < this->get_current_buffer_size()) {
@@ -196,4 +209,4 @@ namespace redis {
     //     return Frame::make_frame(FrameID::Null);
     // }
 
-} // namespace redis
+}  // namespace redis

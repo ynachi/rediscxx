@@ -93,7 +93,7 @@ namespace redis
         std::expected<int64_t, FrameDecodeError> get_int() noexcept;
 
         /**
-         * @brief get_simple_frame_variant decodes a frame thathas a simple strings as internal data.
+         * @brief get_simple_frame_variant decodes a frame that has a simple strings as internal data.
          * So for now, it decodes SimpleString, SimpleError, BigNumber.
          *
          * @return

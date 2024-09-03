@@ -27,7 +27,7 @@ TEST_F(BufferManagerTest, GetSimpleString_EmptyData)
     EXPECT_EQ(result.error(), FrameDecodeError::Empty);
 }
 
-TEST_F(BufferManagerTest, GetSimpleString_IncompleteData)
+TEST_F(BufferManagerTest, GetSimpleString)
 {
     auto& buffer = decoder.get_buffer();
     buffer.push_back('A');
@@ -78,7 +78,7 @@ TEST_F(BufferManagerTest, GetBulkString_EmptyData)
     EXPECT_EQ(result.error(), FrameDecodeError::Empty);
 }
 
-TEST_F(BufferManagerTest, GetBulkString_IncompleteData)
+TEST_F(BufferManagerTest, GetBulkString)
 {
     auto& buffer = decoder.get_buffer();
     buffer.push_back('A');
@@ -109,4 +109,16 @@ TEST_F(BufferManagerTest, GetBulkString_IncompleteData)
     auto result5 = decoder.get_bulk_string(6);
     EXPECT_EQ(result5.value(), "EF\nXFG") << "get_bulk_string can decode a string with LF in it";
     EXPECT_EQ(buffer.size(), 0);
+}
+
+TEST_F(BufferManagerTest, GetInt)
+{
+    auto& buffer = decoder.get_buffer();
+    append_str(buffer, "25\r\na26\r\n");
+
+    const auto result = decoder.get_int();
+    EXPECT_EQ(result.value(), 25);
+
+    auto result2 = decoder.get_int();
+    EXPECT_EQ(result2.error(), FrameDecodeError::Atoi);
 }
