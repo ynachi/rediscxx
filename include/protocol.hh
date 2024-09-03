@@ -2,23 +2,24 @@
 #define PROTOCOL_H
 
 #include <boost/asio/ip/address.hpp>
-#include <boost/asio/streambuf.hpp>
-#include <deque>
 #include <expected>
-#include <iostream>
 #include <seastar/core/temporary_buffer.hh>
 
 #include "frame.hh"
 
-namespace redis {
 
-    inline std::string process_data(const std::string& input) {
+namespace redis
+{
+
+    inline std::string process_data(const std::string &input)
+    {
         std::string output = input;
         std::ranges::transform(output, output.begin(), ::toupper);
         return output;
     }
 
-    enum class FrameDecodeError {
+    enum class FrameDecodeError
+    {
         Invalid,
         Incomplete,
         Empty,
@@ -35,7 +36,8 @@ namespace redis {
      * from the queue. We maintain an internal cursor which denotes where we sit in the next chunk of the process
      * (which is actually queue.front()). In case of a faulty frame, the 'bad' data ois trimmed out.
      */
-    class ProtocolDecoder {
+    class ProtocolDecoder
+    {
         std::vector<char> buffer_;
 
         /**
@@ -58,7 +60,7 @@ namespace redis {
         ProtocolDecoder(ProtocolDecoder &&other) noexcept = delete;
         ProtocolDecoder &operator=(ProtocolDecoder &&other) noexcept = delete;
 
-        std::vector<char>& get_buffer() noexcept {return buffer_;};
+        std::vector<char> &get_buffer() noexcept { return buffer_; };
 
         void consume(const size_t n)
         {
@@ -112,6 +114,6 @@ namespace redis {
 
         std::expected<Frame, FrameDecodeError> get_null_frame() noexcept;
     };
-} // namespace redis
+}  // namespace redis
 
-#endif // PROTOCOL_H
+#endif  // PROTOCOL_H
