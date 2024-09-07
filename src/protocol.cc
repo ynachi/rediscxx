@@ -45,7 +45,7 @@ namespace redis
         return std::unexpected(FrameDecodeError::Incomplete);
     }
 
-    std::expected<std::string, FrameDecodeError> BufferManager::_read_bulk_string(const size_t n) noexcept
+    std::expected<std::string, FrameDecodeError> BufferManager::get_bulk_string(const size_t length) noexcept
     {
         if (this->buffer_.empty())
         {
@@ -53,27 +53,25 @@ namespace redis
         }
 
         // Do we have enough data to decode the bulk frame?
-        if (this->buffer_.size() < n + 2)
+        if (this->buffer_.size() - cursor_ < length + 2)
         {
             return std::unexpected(FrameDecodeError::Incomplete);
         }
 
-        if (this->buffer_[n] != '\r' || this->buffer_[n + 1] != '\n')
+        // save the startup position
+        const auto left = this->buffer_.cbegin() + static_cast<int>(cursor_);
+
+        if (this->buffer_[length + cursor_] != '\r' || this->buffer_[length + cursor_ + 1] != '\n')
         {
-            // remove n+2 bytes which were supposed to be the frame we wanted to decode
-            // because they are part of a faulty frame.
-            // @TODO rewrite
-            // this->consume(n + 2);
+            // move the cursor after what is supposed to be the end of the frame
+            // we need to move to the next char to process
+            this->set_cursor(cursor_ + length + 2);
             return std::unexpected(FrameDecodeError::Invalid);
         }
 
         // Let's actually read the data we know is enough
-        return std::string(this->buffer_.begin(), this->buffer_.begin() + n);
-    }
-
-    std::expected<std::string, FrameDecodeError> BufferManager::get_bulk_string(const size_t length) noexcept
-    {
-        return this->_read_bulk_string(length);
+        this->set_cursor(cursor_ + length + 2);
+        return std::string(left, left + static_cast<int>(length));
     }
 
     std::expected<int64_t, FrameDecodeError> BufferManager::get_int() noexcept

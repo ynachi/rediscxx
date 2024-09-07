@@ -93,31 +93,30 @@ TEST_F(BufferManagerTest, GetBulkString)
     buffer.push_back('A');
     buffer.push_back('\r');
     buffer.push_back('\n');
-    // @TODO: fix this to return an invalid error instead
     auto result = decoder.get_bulk_string(2);
     EXPECT_EQ(result.error(), FrameDecodeError::Incomplete);
 
     const auto result1 = decoder.get_bulk_string(1);
     EXPECT_EQ(result1.value(), "A") << "get_bulk_string: can decode a simple 1 byte frame";
-    EXPECT_EQ(buffer.size(), 0) << R"(get_bulk_string: should consume the character and CRLF)";
+    EXPECT_EQ(decoder.get_cursor(), 3) << R"(get_bulk_string: incomplete error variant does not move the cursor)";
 
-    // append_str(buffer, "ABC\r");
-    // auto result2 = decoder.get_bulk_string(3);
-    // EXPECT_EQ(result2.error(), FrameDecodeError::Incomplete) << "bulk string is not terminated by CRLF";
-    // EXPECT_EQ(buffer.size(), 4);
-    //
-    // append_str(buffer, "\nDEF\rABC\r\nEF\nXFG\r\n");
-    // auto result3 = decoder.get_bulk_string(3);
-    // EXPECT_EQ(result3.value(), "ABC") << "get_bulk_string can decode string";
-    // EXPECT_EQ(buffer.size(), 17);
-    //
-    // auto result4 = decoder.get_bulk_string(7);
-    // EXPECT_EQ(result4.value(), "DEF\rABC") << "get_bulk_string can decode a string with CR in it";
-    // EXPECT_EQ(buffer.size(), 8);
-    //
-    // auto result5 = decoder.get_bulk_string(6);
-    // EXPECT_EQ(result5.value(), "EF\nXFG") << "get_bulk_string can decode a string with LF in it";
-    // EXPECT_EQ(buffer.size(), 0);
+    append_str(buffer, "ABC\r");  // buffers is now "A\r\nABC\r"
+    auto result2 = decoder.get_bulk_string(3);
+    EXPECT_EQ(result2.error(), FrameDecodeError::Incomplete) << "bulk string is not terminated by CRLF";
+    EXPECT_EQ(decoder.get_cursor(), 3);
+
+    append_str(buffer, "\nDEF\rABC\r\nEF\nXFG\r\n");  // "A\r\nABC\r\nDEF\rABC\r\nEF\nXFG\r\n"
+    const auto result3 = decoder.get_bulk_string(3);
+    EXPECT_EQ(result3.value(), "ABC") << "get_bulk_string can decode string";
+    EXPECT_EQ(decoder.get_cursor(), 8);
+
+    auto result4 = decoder.get_bulk_string(7);
+    EXPECT_EQ(result4.value(), "DEF\rABC") << "get_bulk_string can decode a string with CR in it";
+    EXPECT_EQ(decoder.get_cursor(), 17);
+
+    auto result5 = decoder.get_bulk_string(6);
+    EXPECT_EQ(result5.value(), "EF\nXFG") << "get_bulk_string can decode a string with LF in it";
+    EXPECT_EQ(decoder.get_cursor(), 25);
 }
 
 TEST_F(BufferManagerTest, GetInt)
