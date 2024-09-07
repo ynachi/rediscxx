@@ -3,9 +3,12 @@
 //
 #include <frame_id.hh>
 
-namespace redis {
-    std::optional<FrameID> frame_id_from_u8(const uint8_t from) {
-        switch (from) {
+namespace redis
+{
+    FrameID frame_id_from_u8(const uint8_t from)
+    {
+        switch (from)
+        {
             using enum FrameID;
             case kInteger:
                 return Integer;
@@ -26,7 +29,7 @@ namespace redis {
             case kArray:
                 return Array;
             default:
-                return std::nullopt;
+                return Undefined;
         }
     }
-} // namespace redis
+}  // namespace redis

@@ -11,13 +11,6 @@
 namespace redis
 {
 
-    inline std::string process_data(const std::string &input)
-    {
-        std::string output = input;
-        std::ranges::transform(output, output.begin(), ::toupper);
-        return output;
-    }
-
     enum class FrameDecodeError
     {
         Invalid,
@@ -26,6 +19,7 @@ namespace redis
         Atoi,
         Eof,
         WrongArgsType,
+        UndefinedFrame,
     };
 
     /**
@@ -36,46 +30,55 @@ namespace redis
      * from the queue. We maintain an internal cursor which denotes where we sit in the next chunk of the process
      * (which is actually queue.front()). In case of a faulty frame, the 'bad' data ois trimmed out.
      */
-    class ProtocolDecoder
+    class BufferManager
     {
         std::vector<char> buffer_;
-
-        /**
-         * @brief _read_simple_string tries to read a simple string from the buffer pool.
-         *  In case of an error, it strips out the faulty bytes so that the next read do
-         *  n't contain them.
-         *
-         * @return The string without advancing the internal cursor of the buffer. The caller should
-         * make sure to consume the data read out if needed.
-         */
-        std::expected<std::string, FrameDecodeError> _read_simple_string() noexcept;
+        size_t cursor_ = 0;
 
         std::expected<std::string, FrameDecodeError> _read_bulk_string(size_t n) noexcept;
 
     public:
-        ProtocolDecoder(const ProtocolDecoder &) = delete;
-        ProtocolDecoder &operator=(const ProtocolDecoder &) = delete;
+        BufferManager(const BufferManager &) = delete;
+        BufferManager &operator=(const BufferManager &) = delete;
 
-        ProtocolDecoder() noexcept = default;
-        ProtocolDecoder(ProtocolDecoder &&other) noexcept = delete;
-        ProtocolDecoder &operator=(ProtocolDecoder &&other) noexcept = delete;
+        BufferManager() noexcept = default;
+        BufferManager(BufferManager &&other) noexcept = delete;
+        BufferManager &operator=(BufferManager &&other) noexcept = delete;
 
         std::vector<char> &get_buffer() noexcept { return buffer_; };
 
-        void consume(const size_t n)
+        [[nodiscard]] size_t get_cursor() const noexcept { return cursor_; };
+
+        // Warning, by setting the cursor at buffer.size(), we simulate vect::end() iterator behavior
+        // but the cursor shouldn't be used for indexing the buffer. There are risks of exception using
+        // buffer_[cursor_] so don't do that.
+        void set_cursor(const size_t n) noexcept { cursor_ = n >= buffer_.size() ? buffer_.size() : n; };
+
+        // consume the data from the beginning up to the cursor position
+        void consume()
         {
-            assert(n <= buffer_.size());
-            buffer_.erase(buffer_.begin(), buffer_.begin() + static_cast<int>(n));
+            buffer_.erase(buffer_.begin(), buffer_.begin() + static_cast<int>(cursor_));
+            cursor_ = 0;
+        }
+
+        // returns the number of chars from the actual beginning of the vector to the actual cursor position
+        // very useful in tests
+        [[nodiscard]] std::size_t count_left() const noexcept
+        {
+            return std::distance(buffer_.cbegin(), buffer_.cbegin() + static_cast<int>(cursor_));
+        }
+
+        // returns the number of chars from the actual position of the cursor to the end of the buffer
+        // very useful in tests
+        [[nodiscard]] std::size_t count_right() const noexcept
+        {
+            return std::distance(buffer_.cbegin() + static_cast<int>(cursor_), buffer_.cend());
         }
 
         /**
          * @brief Get_simple_string tries to decode a simple string as defined in RESP3.
          * A simple string is a string that doesn't contain any of CR or LF in it.
-         * This function resets the internal cursor back to its initial state if an error occurs.
-         * The internal cursor is set to the next position to read from,
-         * and the successful data is consumed from the
-         * buffer group.
-         * This variant checks that there's no single CR or LF before a CRLF and fires an error in such cases.
+         * This function
          *
          * @return a string or an error
          */
@@ -113,6 +116,15 @@ namespace redis
         std::expected<Frame, FrameDecodeError> get_boolean_frame() noexcept;
 
         std::expected<Frame, FrameDecodeError> get_null_frame() noexcept;
+
+        std::expected<Frame, FrameDecodeError> get_array_frame() noexcept;
+
+        // get the id of a frame from the buffer. Consume the actual byte.
+        // Do not call it on an empty buffer!
+        FrameID get_frame_id();
+
+        // decode tries to identify the incoming frame and decode ir
+        std::expected<Frame, FrameDecodeError> decode() noexcept;
     };
 }  // namespace redis
 

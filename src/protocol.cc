@@ -4,8 +4,7 @@
 
 namespace redis
 {
-
-    std::expected<std::string, FrameDecodeError> ProtocolDecoder::_read_simple_string() noexcept
+    std::expected<std::string, FrameDecodeError> BufferManager::get_simple_string() noexcept
     {
         if (this->buffer_.empty())
         {
@@ -13,8 +12,9 @@ namespace redis
         }
 
         const size_t size = this->buffer_.size();
+        const auto prev_cursor_position = this->buffer_.cbegin() + static_cast<int>(cursor_);
 
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = this->cursor_; i < size; ++i)
         {
             switch (this->buffer_[i])
             {
@@ -26,13 +26,16 @@ namespace redis
                     if (this->buffer_[i + 1] != '\n')
                     {
                         // Invalid frame. Throw away up to \r included
-                        this->consume(i + 1);
+                        this->set_cursor(i + 1);
                         return std::unexpected(FrameDecodeError::Invalid);
                     }
-                    return std::string(this->buffer_.begin(), this->buffer_.begin() + i);
+                    // success, move the cursor after CRLF. As we are at CR, we need to move 2 steps.
+                    this->set_cursor(i + 2);
+                    // Don't include CRLF so the left boundary should be CR non-inclusive
+                    return std::string(prev_cursor_position, this->buffer_.cbegin() + static_cast<int>(i));
                 case '\n':
                     // Invalid: isolated LF, consume up to the LF included
-                    this->consume(i + 1);
+                    this->set_cursor(i + 1);
                     return std::unexpected(FrameDecodeError::Invalid);
                 default:;
             }
@@ -42,7 +45,7 @@ namespace redis
         return std::unexpected(FrameDecodeError::Incomplete);
     }
 
-    std::expected<std::string, FrameDecodeError> ProtocolDecoder::_read_bulk_string(const size_t n) noexcept
+    std::expected<std::string, FrameDecodeError> BufferManager::_read_bulk_string(const size_t n) noexcept
     {
         if (this->buffer_.empty())
         {
@@ -59,7 +62,8 @@ namespace redis
         {
             // remove n+2 bytes which were supposed to be the frame we wanted to decode
             // because they are part of a faulty frame.
-            this->consume(n + 2);
+            // @TODO rewrite
+            // this->consume(n + 2);
             return std::unexpected(FrameDecodeError::Invalid);
         }
 
@@ -67,29 +71,12 @@ namespace redis
         return std::string(this->buffer_.begin(), this->buffer_.begin() + n);
     }
 
-    std::expected<std::string, FrameDecodeError> ProtocolDecoder::get_simple_string() noexcept
+    std::expected<std::string, FrameDecodeError> BufferManager::get_bulk_string(const size_t length) noexcept
     {
-        auto result = this->_read_simple_string();
-        if (!result.has_value())
-        {
-            return std::unexpected(result.error());
-        }
-        this->consume(result->size() + 2);
-        return result;
+        return this->_read_bulk_string(length);
     }
 
-    std::expected<std::string, FrameDecodeError> ProtocolDecoder::get_bulk_string(const size_t length) noexcept
-    {
-        auto result = this->_read_bulk_string(length);
-        if (!result.has_value())
-        {
-            return std::unexpected(result.error());
-        }
-        this->consume(length + 2);
-        return result;
-    }
-
-    std::expected<int64_t, FrameDecodeError> ProtocolDecoder::get_int() noexcept
+    std::expected<int64_t, FrameDecodeError> BufferManager::get_int() noexcept
     {
         auto str_result = this->get_simple_string();
         if (!str_result.has_value())
@@ -108,7 +95,7 @@ namespace redis
         }
     }
 
-    std::expected<Frame, FrameDecodeError> ProtocolDecoder::get_simple_frame_variant(const FrameID frame_id) noexcept
+    std::expected<Frame, FrameDecodeError> BufferManager::get_simple_frame_variant(const FrameID frame_id) noexcept
     {
         if (!std::set{FrameID::SimpleString, FrameID::SimpleError, FrameID::BigNumber}.contains(frame_id))
         {
@@ -124,7 +111,7 @@ namespace redis
         return frame;
     }
 
-    std::expected<Frame, FrameDecodeError> ProtocolDecoder::get_bulk_frame_variant(const FrameID frame_id) noexcept
+    std::expected<Frame, FrameDecodeError> BufferManager::get_bulk_frame_variant(const FrameID frame_id) noexcept
     {
         if (!std::set{FrameID::BulkString, FrameID::BulkError}.contains(frame_id))
         {
@@ -145,7 +132,7 @@ namespace redis
         return frame;
     }
 
-    std::expected<Frame, FrameDecodeError> ProtocolDecoder::get_integer_frame() noexcept
+    std::expected<Frame, FrameDecodeError> BufferManager::get_integer_frame() noexcept
     {
         auto frame_data = this->get_int();
         if (!frame_data.has_value())
@@ -157,7 +144,7 @@ namespace redis
         return frame;
     }
 
-    std::expected<Frame, FrameDecodeError> ProtocolDecoder::get_boolean_frame() noexcept
+    std::expected<Frame, FrameDecodeError> BufferManager::get_boolean_frame() noexcept
     {
         auto frame_data = this->get_simple_string();
         if (!frame_data.has_value())
@@ -173,7 +160,7 @@ namespace redis
         return frame;
     }
 
-    std::expected<Frame, FrameDecodeError> ProtocolDecoder::get_null_frame() noexcept
+    std::expected<Frame, FrameDecodeError> BufferManager::get_null_frame() noexcept
     {
         if (auto frame_data = this->get_simple_string(); !frame_data.has_value())
         {
@@ -181,5 +168,67 @@ namespace redis
         }
         return Frame::make_frame(FrameID::Null);
     }
+
+    FrameID BufferManager::get_frame_id()
+    {
+        assert(!this->buffer_.empty());
+        const auto frame_token = this->buffer_.front();
+        this->buffer_.erase(this->buffer_.begin());
+        return frame_id_from_u8(frame_token);
+    }
+
+
+    std::expected<Frame, FrameDecodeError> BufferManager::decode() noexcept
+    {
+        if (this->buffer_.empty())
+        {
+            return std::unexpected(FrameDecodeError::Empty);
+        }
+
+        switch (const auto frame_id = this->get_frame_id())
+        {
+            case FrameID::SimpleString:
+            case FrameID::SimpleError:
+            case FrameID::BigNumber:
+                return this->get_simple_frame_variant(frame_id);
+            case FrameID::BulkString:
+            case FrameID::BulkError:
+                return this->get_bulk_frame_variant(frame_id);
+            case FrameID::Integer:
+                return this->get_integer_frame();
+            case FrameID::Boolean:
+                return this->get_boolean_frame();
+            case FrameID::Null:
+                return this->get_null_frame();
+            case FrameID::Array:
+                // return this->get_array_frame();
+                return std::unexpected(FrameDecodeError::UndefinedFrame);
+            default:
+                return std::unexpected(FrameDecodeError::UndefinedFrame);
+        }
+    }
+
+    // std::expected<Frame, FrameDecodeError> ProtocolDecoder::get_array_frame() noexcept
+    // {
+    //     auto size = this->get_int();
+    //     if (!size.has_value())
+    //     {
+    //         return std::unexpected(size.error());
+    //     }
+    //     std::vector<Frame> frames;
+    //     frames.reserve(size.value());
+    //     for (int i = 0; i < size.value(); ++i)
+    //     {
+    //         auto frame = this->decode();
+    //         if (!frame.has_value())
+    //         {
+    //             return std::unexpected(frame.error());
+    //         }
+    //         frames.push_back(std::move(frame.value()));
+    //     }
+    //     Frame frame = Frame::make_frame(FrameID::Array);
+    //     frame.data = std::move(frames);
+    //     return frame;
+    // }
 
 }  // namespace redis
