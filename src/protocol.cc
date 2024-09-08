@@ -1,5 +1,6 @@
 #include <protocol.hh>
 #include <set>
+#include <stack>
 #include <string>
 
 namespace redis
@@ -167,11 +168,16 @@ namespace redis
         return Frame::make_frame(FrameID::Null);
     }
 
+    std::expected<Frame, FrameDecodeError> BufferManager::get_array_frame() noexcept
+    {
+        return this->_get_aggregate_frame(FrameID::Array);
+    }
+
     FrameID BufferManager::get_frame_id()
     {
         assert(!this->buffer_.empty());
-        const auto frame_token = this->buffer_.front();
-        this->buffer_.erase(this->buffer_.begin());
+        const auto frame_token = *(buffer_.begin() + static_cast<int>(cursor_));
+        this->set_cursor(this->cursor_ + 1);
         return frame_id_from_u8(frame_token);
     }
 
@@ -199,34 +205,130 @@ namespace redis
             case FrameID::Null:
                 return this->get_null_frame();
             case FrameID::Array:
-                // return this->get_array_frame();
-                return std::unexpected(FrameDecodeError::UndefinedFrame);
+                return this->get_array_frame();
             default:
                 return std::unexpected(FrameDecodeError::UndefinedFrame);
         }
     }
 
-    // std::expected<Frame, FrameDecodeError> ProtocolDecoder::get_array_frame() noexcept
-    // {
-    //     auto size = this->get_int();
-    //     if (!size.has_value())
-    //     {
-    //         return std::unexpected(size.error());
-    //     }
-    //     std::vector<Frame> frames;
-    //     frames.reserve(size.value());
-    //     for (int i = 0; i < size.value(); ++i)
-    //     {
-    //         auto frame = this->decode();
-    //         if (!frame.has_value())
-    //         {
-    //             return std::unexpected(frame.error());
-    //         }
-    //         frames.push_back(std::move(frame.value()));
-    //     }
-    //     Frame frame = Frame::make_frame(FrameID::Array);
-    //     frame.data = std::move(frames);
-    //     return frame;
-    // }
+    std::expected<Frame, FrameDecodeError> BufferManager::_get_aggregate_frame(FrameID frame_type) noexcept
+    {
+        // "3\r\n:1\r\n:2\r\n:3\r\n" -> [1, 2, 3]
+        // "*2\r\n:1\r\n*1\r\n+Three\r\n&&" -> [1, ["Tree"]]
 
+        // @TODO: double size if frame type is map
+        const auto maybe_size = this->get_int();
+        if (!maybe_size.has_value())
+        {
+            return std::unexpected(maybe_size.error());
+        }
+
+        auto size = maybe_size.value();
+        std::vector<Frame> frames;
+        frames.reserve(size);
+        // we keep track of
+        // 1. the type of aggregate frame we need to process
+        // 2. the number inner frames left to decode
+        // 3. The container where we store the frames for the current aggregate
+        std::stack<std::tuple<FrameID, int64_t, std::vector<Frame>>> stack;
+        stack.emplace(frame_type, size, frames);
+
+        while (!stack.empty())
+        {
+            // get the next frame type
+            if (!this->has_data())
+            {
+                // we expect more data as we are not done yet.
+                return std::unexpected(FrameDecodeError::Incomplete);
+            }
+
+            auto next_frame_id = this->get_frame_id();
+
+            // is the next frame also aggregate?
+            if (is_aggregate_frame(next_frame_id))
+            {
+                const auto maybe_next_size = this->get_int();
+                if (!maybe_next_size.has_value())
+                {
+                    return std::unexpected(maybe_next_size.error());
+                }
+                stack.emplace(next_frame_id, maybe_next_size.value(), std::vector<Frame>{});
+                continue;
+            }
+
+            auto next_frame = this->_get_non_aggregate_frame(next_frame_id);
+            if (!next_frame.has_value())
+            {
+                return std::unexpected(next_frame.error());
+            }
+            // append the frame in place
+            auto &latest_tuple = stack.top();
+            std::get<2>(latest_tuple).push_back(std::move(next_frame.value()));
+            --std::get<1>(latest_tuple);
+
+            // If count == 0, we've decoded an entire array.
+            // So push it to the penultimate
+            // aggregate in the stack if any.
+            // If there's no more array in the stack, this means
+            // we should return as the total frame was completely processed.
+            if (std::get<1>(latest_tuple) == 0)
+            {
+                while (true)
+                {
+                    auto &parent_tuple = stack.top();
+                    stack.pop();
+                    // The full global frame was decoded, so return it
+                    if (stack.empty())
+                    {
+                        // Here is why we needed to keep track of the IDs,
+                        // to build the right aggregate.
+                        Frame final_result = Frame::make_frame(std::get<0>(parent_tuple));
+                        final_result.data = std::move(std::get<2>(parent_tuple));
+                        return final_result;
+                    }
+                    // we fully decoded an intermediate aggregate but not the full global frame
+                    auto &child_tuple = stack.top();
+                    Frame child_aggregate_frame = Frame::make_frame(std::get<0>(child_tuple));
+                    child_aggregate_frame.data = std::move(std::get<2>(parent_tuple));
+                    std::get<2>(child_tuple).push_back(std::move(child_aggregate_frame));
+                    --std::get<1>(child_tuple);
+                    // 0 means there are no longer frame to process for the child, so we should continue to
+                    // pop and push already processed one. Anything different to 0 means we have to continue to
+                    // process new frames. This is why we need to exit the loop in this case.
+                    if (std::get<1>(child_tuple) != 0)
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+        return std::unexpected(FrameDecodeError::Invalid);
+    }
+
+    std::expected<Frame, FrameDecodeError> BufferManager::_get_non_aggregate_frame(FrameID frame_id) noexcept
+    {
+        assert(!is_aggregate_frame(frame_id));
+        std::expected<Frame, FrameDecodeError> result;
+        if (is_bulk_frame(frame_id))
+        {
+            result = this->get_bulk_frame_variant(frame_id);
+        }
+        else if (is_simple_frame(frame_id))
+        {
+            result = this->get_simple_frame_variant(frame_id);
+        }
+        else if (frame_id == FrameID::Integer)
+        {
+            result = this->get_integer_frame();
+        }
+        else if (frame_id == FrameID::Boolean)
+        {
+            result = this->get_boolean_frame();
+        }
+        else
+        {
+            result = this->get_null_frame();
+        }
+        return result;
+    }
 }  // namespace redis

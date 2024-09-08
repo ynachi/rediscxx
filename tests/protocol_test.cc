@@ -131,10 +131,32 @@ TEST_F(BufferManagerTest, GetInt)
     EXPECT_EQ(result2.error(), FrameDecodeError::Atoi);
 }
 
+TEST_F(BufferManagerTest, GetBool)
+{
+    auto& buffer = decoder.get_buffer();
+    append_str(buffer, "t\r\na26\r\n");
+
+    const auto result = decoder.get_boolean_frame();
+    auto ans = Frame{FrameID::Boolean, true};
+    EXPECT_EQ(result.value(), ans);
+}
+
+TEST_F(BufferManagerTest, GetNull)
+{
+    auto& buffer = decoder.get_buffer();
+    append_str(buffer, "t\r\na26\r\n");
+
+    const auto result = decoder.get_null_frame();
+    auto ans = Frame{
+            FrameID::Null,
+    };
+    EXPECT_EQ(result.value(), ans);
+}
+
 TEST_F(BufferManagerTest, get_simple_frame_variant)
 {
     auto& buffer = decoder.get_buffer();
-    append_str(buffer, "ABC\r\na26\r\n");
+    append_str(buffer, "ABC\r\na26\r\nt\r\n");
 
     auto result = decoder.get_simple_frame_variant(FrameID::SimpleString);
     auto ans = Frame{FrameID::SimpleString, "ABC"};
@@ -146,4 +168,58 @@ TEST_F(BufferManagerTest, get_simple_frame_variant)
     auto result2 = decoder.get_simple_frame_variant(FrameID::SimpleError);
     auto ans2 = Frame{FrameID::SimpleError, "a26"};
     EXPECT_EQ(result2.value(), ans2);
+}
+
+TEST_F(BufferManagerTest, DecodeNonNested)
+{
+    auto& buffer = decoder.get_buffer();
+    append_str(buffer, "+OK\r\n+\r\n-err\n");
+
+    auto result = decoder.decode();
+    auto ans = Frame{FrameID::SimpleString, "OK"};
+    EXPECT_EQ(result.value(), ans) << "can decode a simple string with start a stream";
+
+    result = decoder.decode();
+    ans = Frame{FrameID::SimpleString, ""};
+    EXPECT_EQ(result.value(), ans) << "can decode an empty simple string";
+
+    result = decoder.decode();
+    EXPECT_EQ(result.error(), FrameDecodeError::Invalid) << "Simple error frame is malformed, no CRLF";
+
+    append_str(buffer, "$5\r\nhello\r\n-err\r\n:66\r\n:-5\r\n:0\r\n#t\r\n#f\r\n#n\r\n!3\r\nerr\r\n");
+
+    result = decoder.decode();
+    ans = Frame{FrameID::BulkString, "hello"};
+    EXPECT_EQ(result.value(), ans) << "can decode a bulk string";
+
+    result = decoder.decode();
+    ans = Frame{FrameID::SimpleError, "err"};
+    EXPECT_EQ(result.value(), ans) << "can decode a simple error";
+
+    result = decoder.decode();
+    ans = Frame{FrameID::Integer, 66};
+    EXPECT_EQ(result.value(), ans) << "can decode a positive integer";
+
+    result = decoder.decode();
+    ans = Frame{FrameID::Integer, -5};
+    EXPECT_EQ(result.value(), ans) << "can decode a negative integer";
+
+    result = decoder.decode();
+    ans = Frame{FrameID::Integer, 0};
+    EXPECT_EQ(result.value(), ans) << "can decode a 0 as integer";
+
+    result = decoder.decode();
+    ans = Frame{FrameID::Boolean, true};
+    EXPECT_EQ(result.value(), ans) << "can decode a boolean which is true";
+
+    result = decoder.decode();
+    ans = Frame{FrameID::Boolean, false};
+    EXPECT_EQ(result.value(), ans) << "can decode a boolean which is false";
+
+    result = decoder.decode();
+    EXPECT_EQ(result.error(), FrameDecodeError::Invalid) << "can spot a malformed boolean frame";
+
+    result = decoder.decode();
+    ans = Frame{FrameID::BulkError, "err"};
+    EXPECT_EQ(result.value(), ans) << "can decode a bulk error";
 }

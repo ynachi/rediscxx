@@ -26,16 +26,20 @@ namespace redis
      * @brief The BufferManager class is responsible for decoding Redis protocol frames.
      *
      * The Protocol Decoder class accumulates data chunks in a deque and processes them
-     * to extract complete frames as defined by the Redis protocol. Each fully processed chunk should be removed
-     * from the queue. We maintain an internal cursor which denotes where we sit in the next chunk of the process
-     * (which is actually queue.front()). In case of a faulty frame, the 'bad' data ois trimmed out.
+     * to extract complete frames as defined by the Redis protocol.
+     * We maintain an internal cursor which denotes where we sit in the next chunk of the process
      */
     class BufferManager
     {
         std::vector<char> buffer_;
         size_t cursor_ = 0;
 
-        std::expected<std::string, FrameDecodeError> _read_bulk_string(size_t n) noexcept;
+        // used to decode Array, Map and Set frames. For now, we will only work an array.
+        std::expected<Frame, FrameDecodeError> _get_aggregate_frame(FrameID frame_type) noexcept;
+
+        std::expected<Frame, FrameDecodeError> _get_non_aggregate_frame(FrameID frame_id) noexcept;
+
+        // helper method to get a non-aggregate frame
 
     public:
         BufferManager(const BufferManager &) = delete;
@@ -122,6 +126,8 @@ namespace redis
         // get the id of a frame from the buffer. Consume the actual byte.
         // Do not call it on an empty buffer!
         FrameID get_frame_id();
+
+        [[nodiscard]] bool has_data() const noexcept { return cursor_ < buffer_.size(); }
 
         // decode tries to identify the incoming frame and decode ir
         std::expected<Frame, FrameDecodeError> decode() noexcept;

@@ -34,6 +34,17 @@ namespace redis
     };
 
     FrameID frame_id_from_u8(uint8_t from);
+
+    inline bool is_aggregate_frame(const FrameID frame_id) noexcept { return frame_id == FrameID::Array; };
+    inline bool is_bulk_frame(const FrameID frame_id) noexcept
+    {
+        return frame_id == FrameID::BulkString || frame_id == FrameID::BulkError;
+    };
+
+    inline bool is_simple_frame(const FrameID frame_id) noexcept
+    {
+        return !is_aggregate_frame(frame_id) && !is_bulk_frame(frame_id);
+    };
 }  // namespace redis
 
 #endif  // FRAME_ID_HH
