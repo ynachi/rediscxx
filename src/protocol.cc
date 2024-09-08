@@ -275,7 +275,9 @@ namespace redis
             {
                 while (true)
                 {
-                    auto &parent_tuple = stack.top();
+                    // Warning here! we need to copy or move as using the reference would let the value
+                    // in an undefined state.
+                    auto parent_tuple = std::move(stack.top());
                     stack.pop();
                     // The full global frame was decoded, so return it
                     if (stack.empty())

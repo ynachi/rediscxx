@@ -223,3 +223,15 @@ TEST_F(BufferManagerTest, DecodeNonNested)
     ans = Frame{FrameID::BulkError, "err"};
     EXPECT_EQ(result.value(), ans) << "can decode a bulk error";
 }
+
+TEST_F(BufferManagerTest, DecodeSimpleArray)
+{
+    auto& buffer = decoder.get_buffer();
+    append_str(buffer, "*3\r\n:1\r\n+Two\r\n$5\r\nThree\r\n");
+
+    auto result = decoder.decode();
+    auto vect = std::vector{Frame{FrameID::Integer, 1}, Frame{FrameID::SimpleString, "Two"},
+                            Frame{FrameID::BulkString, "Three"}};
+    auto ans = Frame{FrameID::Array, std::move(vect)};
+    EXPECT_EQ(result.value(), ans) << "can decode a simple string with start a stream";
+}

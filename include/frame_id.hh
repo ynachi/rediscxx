@@ -43,7 +43,7 @@ namespace redis
 
     inline bool is_simple_frame(const FrameID frame_id) noexcept
     {
-        return !is_aggregate_frame(frame_id) && !is_bulk_frame(frame_id);
+        return frame_id == FrameID::SimpleString || frame_id == FrameID::SimpleError || frame_id == FrameID::BigNumber;
     };
 }  // namespace redis
 
