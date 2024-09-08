@@ -235,3 +235,52 @@ TEST_F(BufferManagerTest, DecodeSimpleArray)
     auto ans = Frame{FrameID::Array, std::move(vect)};
     EXPECT_EQ(result.value(), ans) << "can decode a simple string with start a stream";
 }
+
+TEST_F(BufferManagerTest, DecodeNestedArray)
+{
+    auto& buffer = decoder.get_buffer();
+    append_str(buffer, "*2\r\n:1\r\n*1\r\n+Three\r\n");
+
+    auto result = decoder.decode();
+    auto inner_vect = std::vector{Frame{FrameID::SimpleString, "Three"}};
+    auto vect = std::vector{Frame{FrameID::Integer, 1}, Frame{FrameID::Array, inner_vect}};
+    auto ans = Frame{FrameID::Array, std::move(vect)};
+    EXPECT_EQ(result.value(), ans) << "can decode a simple string with start a stream";
+}
+
+TEST_F(BufferManagerTest, DecodeSimpleArrayIncomplete)
+{
+    auto& buffer = decoder.get_buffer();
+    append_str(buffer, "*3\r\n:1\r\n+Two\r\n$5\r\nThree");
+
+    auto result = decoder.decode();
+    EXPECT_EQ(result.error(), FrameDecodeError::Incomplete) << "can spot incomplete frame array";
+}
+
+TEST_F(BufferManagerTest, DecodeNestedArrayIncomplete)
+{
+    auto& buffer = decoder.get_buffer();
+    append_str(buffer, "*2\r\n:1\r\n*1\r\n+Three");
+
+    auto result = decoder.decode();
+    EXPECT_EQ(result.error(), FrameDecodeError::Incomplete) << "can spot incomplete frame array even when nested";
+}
+
+TEST_F(BufferManagerTest, DecodeSimpleArrayInvalid)
+{
+    auto& buffer = decoder.get_buffer();
+    append_str(buffer, "*3\r\n:1\r\n+Two\r\n$5\r\nThreeI\r\n");
+
+    auto result = decoder.decode();
+    EXPECT_EQ(result.error(), FrameDecodeError::Invalid) << "can spot invalid frame array";
+}
+
+TEST_F(BufferManagerTest, DecodeNestedArrayInvalid)
+{
+    auto& buffer = decoder.get_buffer();
+    append_str(buffer, "*2\r\n:N\r\n*1\r\n+Three\r\n");
+
+    auto result = decoder.decode();
+    EXPECT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), FrameDecodeError::Atoi) << "can spot invalid frame array even when nested";
+}
