@@ -130,7 +130,7 @@ namespace redis
         [[nodiscard]] bool has_data() const noexcept { return cursor_ < buffer_.size(); }
 
         // decode tries to identify the incoming frame and decode ir
-        std::expected<Frame, FrameDecodeError> decode() noexcept;
+        std::expected<Frame, FrameDecodeError> decode_frame() noexcept;
     };
 }  // namespace redis
 

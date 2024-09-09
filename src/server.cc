@@ -30,16 +30,24 @@ namespace redis
 
     awaitable<void> Server::listen()
     {
-        for (;;)
+        while (!_io_ctx.stopped())
         {
-            auto socket = co_await this->_acceptor.async_accept(use_awaitable);
-            // create a connection object here
-            auto const conn = Connection::create(std::move(socket));
-            // we use void because we do not want to wait for the future, because connections
-            // should be processed as soon as we get them.
-            // co_spawn(executor, echo(std::move(socket)), detached);
-            co_spawn(_io_ctx, conn->process_frames(), detached);
+            try
+            {
+                auto socket = co_await this->_acceptor.async_accept(use_awaitable);
+                // create a connection object here
+                auto const conn = Connection::create(std::move(socket));
+                // we use void because we do not want to wait for the future, because connections
+                // should be processed as soon as we get them.
+                // co_spawn(executor, echo(std::move(socket)), detached);
+                co_spawn(_io_ctx, conn->process_frames(), detached);
+            }
+            catch (std::exception& e)
+            {
+                std::cerr << "Server::Server: server listening error: " << e.what() << std::endl;
+            }
         }
+        co_return;
     }
 
     void Server::run()
@@ -64,7 +72,10 @@ namespace redis
         // Wait for all threads to complete
         for (auto& thread: threads)
         {
-            thread.join();
+            if (thread.joinable())
+            {
+                thread.join();
+            }
         }
     }
 }  // namespace redis

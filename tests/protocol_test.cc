@@ -174,52 +174,56 @@ TEST_F(BufferManagerTest, DecodeNonNested)
 {
     auto& buffer = decoder.get_buffer();
     append_str(buffer, "+OK\r\n+\r\n-err\n");
+    EXPECT_EQ(buffer.size(), 13);
 
-    auto result = decoder.decode();
+    auto result = decoder.decode_frame();
     auto ans = Frame{FrameID::SimpleString, "OK"};
     EXPECT_EQ(result.value(), ans) << "can decode a simple string with start a stream";
+    EXPECT_EQ(buffer.size(), 8) << "successful decode should consume the buffer";
 
-    result = decoder.decode();
+    result = decoder.decode_frame();
     ans = Frame{FrameID::SimpleString, ""};
     EXPECT_EQ(result.value(), ans) << "can decode an empty simple string";
+    EXPECT_EQ(buffer.size(), 5) << "successful decode should consume the buffer";
 
-    result = decoder.decode();
+    result = decoder.decode_frame();
     EXPECT_EQ(result.error(), FrameDecodeError::Invalid) << "Simple error frame is malformed, no CRLF";
+    EXPECT_EQ(buffer.size(), 0) << "invalid decode should consume the buffer";
 
     append_str(buffer, "$5\r\nhello\r\n-err\r\n:66\r\n:-5\r\n:0\r\n#t\r\n#f\r\n#n\r\n!3\r\nerr\r\n");
 
-    result = decoder.decode();
+    result = decoder.decode_frame();
     ans = Frame{FrameID::BulkString, "hello"};
     EXPECT_EQ(result.value(), ans) << "can decode a bulk string";
 
-    result = decoder.decode();
+    result = decoder.decode_frame();
     ans = Frame{FrameID::SimpleError, "err"};
     EXPECT_EQ(result.value(), ans) << "can decode a simple error";
 
-    result = decoder.decode();
+    result = decoder.decode_frame();
     ans = Frame{FrameID::Integer, 66};
     EXPECT_EQ(result.value(), ans) << "can decode a positive integer";
 
-    result = decoder.decode();
+    result = decoder.decode_frame();
     ans = Frame{FrameID::Integer, -5};
     EXPECT_EQ(result.value(), ans) << "can decode a negative integer";
 
-    result = decoder.decode();
+    result = decoder.decode_frame();
     ans = Frame{FrameID::Integer, 0};
     EXPECT_EQ(result.value(), ans) << "can decode a 0 as integer";
 
-    result = decoder.decode();
+    result = decoder.decode_frame();
     ans = Frame{FrameID::Boolean, true};
     EXPECT_EQ(result.value(), ans) << "can decode a boolean which is true";
 
-    result = decoder.decode();
+    result = decoder.decode_frame();
     ans = Frame{FrameID::Boolean, false};
     EXPECT_EQ(result.value(), ans) << "can decode a boolean which is false";
 
-    result = decoder.decode();
+    result = decoder.decode_frame();
     EXPECT_EQ(result.error(), FrameDecodeError::Invalid) << "can spot a malformed boolean frame";
 
-    result = decoder.decode();
+    result = decoder.decode_frame();
     ans = Frame{FrameID::BulkError, "err"};
     EXPECT_EQ(result.value(), ans) << "can decode a bulk error";
 }
@@ -229,7 +233,7 @@ TEST_F(BufferManagerTest, DecodeSimpleArray)
     auto& buffer = decoder.get_buffer();
     append_str(buffer, "*3\r\n:1\r\n+Two\r\n$5\r\nThree\r\n");
 
-    auto result = decoder.decode();
+    auto result = decoder.decode_frame();
     auto vect = std::vector{Frame{FrameID::Integer, 1}, Frame{FrameID::SimpleString, "Two"},
                             Frame{FrameID::BulkString, "Three"}};
     auto ans = Frame{FrameID::Array, std::move(vect)};
@@ -241,7 +245,7 @@ TEST_F(BufferManagerTest, DecodeNestedArray)
     auto& buffer = decoder.get_buffer();
     append_str(buffer, "*2\r\n:1\r\n*1\r\n+Three\r\n");
 
-    auto result = decoder.decode();
+    auto result = decoder.decode_frame();
     auto inner_vect = std::vector{Frame{FrameID::SimpleString, "Three"}};
     auto vect = std::vector{Frame{FrameID::Integer, 1}, Frame{FrameID::Array, inner_vect}};
     auto ans = Frame{FrameID::Array, std::move(vect)};
@@ -252,9 +256,11 @@ TEST_F(BufferManagerTest, DecodeSimpleArrayIncomplete)
 {
     auto& buffer = decoder.get_buffer();
     append_str(buffer, "*3\r\n:1\r\n+Two\r\n$5\r\nThree");
+    EXPECT_EQ(buffer.size(), 23);
 
-    auto result = decoder.decode();
+    auto result = decoder.decode_frame();
     EXPECT_EQ(result.error(), FrameDecodeError::Incomplete) << "can spot incomplete frame array";
+    EXPECT_EQ(buffer.size(), 23) << "incomplete decode should not consume the buffer";
 }
 
 TEST_F(BufferManagerTest, DecodeNestedArrayIncomplete)
@@ -262,7 +268,7 @@ TEST_F(BufferManagerTest, DecodeNestedArrayIncomplete)
     auto& buffer = decoder.get_buffer();
     append_str(buffer, "*2\r\n:1\r\n*1\r\n+Three");
 
-    auto result = decoder.decode();
+    auto result = decoder.decode_frame();
     EXPECT_EQ(result.error(), FrameDecodeError::Incomplete) << "can spot incomplete frame array even when nested";
 }
 
@@ -271,7 +277,7 @@ TEST_F(BufferManagerTest, DecodeSimpleArrayInvalid)
     auto& buffer = decoder.get_buffer();
     append_str(buffer, "*3\r\n:1\r\n+Two\r\n$5\r\nThreeI\r\n");
 
-    auto result = decoder.decode();
+    auto result = decoder.decode_frame();
     EXPECT_EQ(result.error(), FrameDecodeError::Invalid) << "can spot invalid frame array";
 }
 
@@ -280,7 +286,7 @@ TEST_F(BufferManagerTest, DecodeNestedArrayInvalid)
     auto& buffer = decoder.get_buffer();
     append_str(buffer, "*2\r\n:N\r\n*1\r\n+Three\r\n");
 
-    auto result = decoder.decode();
+    auto result = decoder.decode_frame();
     EXPECT_FALSE(result.has_value());
     EXPECT_EQ(result.error(), FrameDecodeError::Atoi) << "can spot invalid frame array even when nested";
 }

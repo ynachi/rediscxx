@@ -182,33 +182,54 @@ namespace redis
     }
 
 
-    std::expected<Frame, FrameDecodeError> BufferManager::decode() noexcept
+    std::expected<Frame, FrameDecodeError> BufferManager::decode_frame() noexcept
     {
         if (this->buffer_.empty())
         {
             return std::unexpected(FrameDecodeError::Empty);
         }
 
+        std::expected<Frame, FrameDecodeError> result;
         switch (const auto frame_id = this->get_frame_id())
         {
             case FrameID::SimpleString:
             case FrameID::SimpleError:
             case FrameID::BigNumber:
-                return this->get_simple_frame_variant(frame_id);
+                result = this->get_simple_frame_variant(frame_id);
+                break;
             case FrameID::BulkString:
             case FrameID::BulkError:
-                return this->get_bulk_frame_variant(frame_id);
+                result = this->get_bulk_frame_variant(frame_id);
+                break;
             case FrameID::Integer:
-                return this->get_integer_frame();
+                result = this->get_integer_frame();
+                break;
             case FrameID::Boolean:
-                return this->get_boolean_frame();
+                result = this->get_boolean_frame();
+                break;
             case FrameID::Null:
-                return this->get_null_frame();
+                result = this->get_null_frame();
+                break;
             case FrameID::Array:
-                return this->get_array_frame();
+                result = this->get_array_frame();
+                break;
             default:
-                return std::unexpected(FrameDecodeError::UndefinedFrame);
+                result = std::unexpected(FrameDecodeError::UndefinedFrame);
         }
+        // Do not consume in case of incomplete frame.
+        // In all other cases, consume the processed data.
+        if (result.has_value() || result.error() != FrameDecodeError::Incomplete)
+        {
+            this->consume();
+        }
+        else if (result.error() == FrameDecodeError::Incomplete)
+        {
+            // bring back the cursor to the begining of the stream as we will try to decode again from the beginning.
+            // For this reason, the user should evaluate the sizes of most frames and set the buffer size accordingly.
+            // Because it can be costly to do not decode a full frame in one shot.
+            this->set_cursor(0);
+        }
+        return result;
     }
 
     std::expected<Frame, FrameDecodeError> BufferManager::_get_aggregate_frame(FrameID frame_type) noexcept

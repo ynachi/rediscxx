@@ -27,26 +27,29 @@ namespace redis
             }
             if (e)
             {
-                std::cout << "connection::process_frames: error reading from socket " << e.what();
+                std::cerr << "connection::process_frames: error reading from socket " << e.what();
                 continue;
             }
             buffer.commit(n);  // Commit the read bytes to the buffer
-            std::cout << "First read: " << n << " bytes" << std::endl;
-            std::cout << "Total bytes after first read: " << self->decoder_.get_buffer().size() << std::endl;
-                while (true)
+            while (true)
+            {
+                if (auto output = this->decoder_.decode_frame(); output.has_value())
                 {
-                    if (auto output = this->decoder_.get_simple_string(); output.has_value()) {
-                        std::cout << "decoded string: " << output.value() << "\n" << std::flush;
-                        auto [e1, _] = co_await async_write(_socket, boost::asio::buffer(output.value() + "\n"), use_nothrow_awaitable);
-                        if (e1)
-                        {
-                            std::cerr << "connection::process_frames: error writing to socket";
-                        }
-                        std::cout << "Done writing back to socket\n";
-                    } else {
-                        break;
+                    std::cout << "decoded string: " << output.value().to_string() << "\n" << std::flush;
+                    auto [e1, _] = co_await async_write(_socket, boost::asio::buffer(output.value().to_string()),
+                                                        use_nothrow_awaitable);
+                    if (e1)
+                    {
+                        std::cerr << "connection::process_frames: error writing to socket";
                     }
+                    std::cout << "Done writing back to socket\n";
                 }
+                else
+                {
+                    // @TODO: send back an error to the client if needed
+                    break;
+                }
+            }
         }
     }
 }  // namespace redis

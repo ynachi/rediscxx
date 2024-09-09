@@ -43,6 +43,14 @@ namespace redis
 
         Connection &operator=(Connection &&) = delete;
 
+        ~Connection()
+        {
+            if (_socket.is_open())
+            {
+                _socket.shutdown(tcp::socket::shutdown_both);
+            }
+        }
+
     private:
         tcp::socket _socket;
         BufferManager decoder_;

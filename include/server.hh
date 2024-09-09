@@ -13,7 +13,7 @@ namespace redis
     using boost::asio::detached;
     using boost::asio::ip::tcp;
 
-    class Server: public std::enable_shared_from_this<Server>
+    class Server : public std::enable_shared_from_this<Server>
     {
         struct Private
         {
@@ -30,13 +30,21 @@ namespace redis
             return std::make_shared<Server>(Private(), endpoint, reuse_addr, num_threads);
         }
 
+        ~Server()
+        {
+            std::cout << "Server destructor called. Cleaning up resources." << std::endl;
+            // Explicit cleanup if needed (for example, stopping io_context)
+            _acceptor.close();
+            _io_ctx.stop();
+        }
+
         Server(const Server &) = delete;
 
         Server &operator=(const Server &) = delete;
 
-        Server(Server &&) noexcept;
+        Server(Server &&) noexcept = delete;
 
-        Server &operator=(Server &&) noexcept;
+        Server &operator=(Server &&) noexcept = delete;
 
         awaitable<void> listen();
 
