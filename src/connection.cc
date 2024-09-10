@@ -2,40 +2,54 @@
 // Created by ynachi on 8/17/24.
 //
 #include <connection.hh>
+#include <iostream>
 
-namespace redis {
-    seastar::future<> Connection::process_frames() {
-        std::cout << "entered process frames" << "\n";
-        // the caller and this method needs to make sure the connection
-        // object is not out of scope, so use a shared reference from
-        // the current connection.
+namespace redis
+{
+    using boost::asio::awaitable;
+    using boost::asio::use_awaitable;
+    using boost::asio::ip::tcp;
+
+    constexpr auto use_nothrow_awaitable = as_tuple(use_awaitable);
+
+    awaitable<void> Connection::process_frames()
+    {
         auto const self = this->get_ptr();
-        while (true) {
-            if (self->_input_stream.eof()) {
-                self->_logger->debug("connection was closed by the user");
-                break;
+        boost::asio::dynamic_vector_buffer buffer(self->decoder_.get_buffer());
+        for (;;)
+        {
+            auto buffer_space = buffer.prepare(self->read_chunk_size_);
+            const auto [e, n] = co_await _socket.async_read_some(buffer_space, use_nothrow_awaitable);
+            if ((e && e == boost::asio::error::eof) || n == 0)
+            {
+                std::cout << "connection::process_frames: connection closed by user";
+                co_return;
             }
-            auto tmp_read_buf = co_await self->_input_stream.read();
-            if (tmp_read_buf.empty()) {
-                self->_logger->debug("connection was closed by the user");
-                break;
-            }
-            this->_buffer.add_upstream_data(std::move(tmp_read_buf));
-            auto data = this->_buffer.get_simple_string();
-            std::cout << data.value() << "\n";
-            if (data.error() == FrameDecodeError::Incomplete) {
+            if (e)
+            {
+                std::cerr << "connection::process_frames: error reading from socket " << e.what();
                 continue;
             }
-            if (!data.has_value()) {
-                self->_logger->debug("error decoding frame");
-                continue;
+            buffer.commit(n);  // Commit the read bytes to the buffer
+            while (true)
+            {
+                if (auto output = this->decoder_.decode_frame(); output.has_value())
+                {
+                    std::cout << "decoded string: " << output.value().to_string() << "\n" << std::flush;
+                    auto [e1, _] = co_await async_write(_socket, boost::asio::buffer(output.value().to_string()),
+                                                        use_nothrow_awaitable);
+                    if (e1)
+                    {
+                        std::cerr << "connection::process_frames: error writing to socket";
+                    }
+                    std::cout << "Done writing back to socket\n";
+                }
+                else
+                {
+                    // @TODO: send back an error to the client if needed
+                    break;
+                }
             }
-            const auto &ans = data.value();
-            std::cout << data.value() << "\n";
-            co_await self->_output_stream.write(data.value());
-            co_await self->_output_stream.flush();
         }
-        co_await self->_output_stream.close();
-        co_return;
     }
-} // namespace redis
+}  // namespace redis

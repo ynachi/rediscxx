@@ -1,71 +1,88 @@
 #ifndef PROTOCOL_H
 #define PROTOCOL_H
 
-#include <deque>
+#include <boost/asio/ip/address.hpp>
 #include <expected>
 #include <seastar/core/temporary_buffer.hh>
+
 #include "frame.hh"
 
-namespace redis {
 
-    enum class FrameDecodeError {
+namespace redis
+{
+
+    enum class FrameDecodeError
+    {
         Invalid,
         Incomplete,
         Empty,
         Atoi,
-        WrongArgsType, // calling a function with unexpected arguments
+        Eof,
+        WrongArgsType,
+        UndefinedFrame,
     };
 
     /**
      * @brief The BufferManager class is responsible for decoding Redis protocol frames.
      *
-     * The BufferManager class accumulates data chunks in a deque and processes them
-     * to extract complete frames as defined by the Redis protocol. Each fully processed chunk should be removed
-     * from the queue. We maintains an internal cursor which denotes where we sit in the next chunk to process
-     * (which is actually queue.front()). In case of a faulty frame, the 'bad' data ois trimmed out.
+     * The Protocol Decoder class accumulates data chunks in a deque and processes them
+     * to extract complete frames as defined by the Redis protocol.
+     * We maintain an internal cursor which denotes where we sit in the next chunk of the process
      */
-    class BufferManager {
-        std::deque<seastar::temporary_buffer<char>> _data;
+    class BufferManager
+    {
+        std::vector<char> buffer_;
+        size_t cursor_ = 0;
 
-        /**
-         * @brief _read_simple_string tries to read a simple string from the buffer pool.
-         *  In case of an error, it strip out the faulty bytes so that the next read do
-         *  not contain them.
-         *
-         * @return the string without advancing the internal cursor of the buffer. The caller should
-         * make sure to consume the data read out if needed.
-         */
-        std::expected<std::string, FrameDecodeError> _read_simple_string() noexcept;
+        // used to decode Array, Map and Set frames. For now, we will only work an array.
+        std::expected<Frame, FrameDecodeError> _get_aggregate_frame(FrameID frame_type) noexcept;
 
-        std::expected<std::string, FrameDecodeError> _read_bulk_string(size_t n) noexcept;
+        std::expected<Frame, FrameDecodeError> _get_non_aggregate_frame(FrameID frame_id) noexcept;
+
+        // helper method to get a non-aggregate frame
 
     public:
-        // prevent copy because we want to match seastar::temporary_buffer<char> behavior
-        // which is not copyable.
         BufferManager(const BufferManager &) = delete;
         BufferManager &operator=(const BufferManager &) = delete;
 
         BufferManager() noexcept = default;
-        BufferManager(BufferManager &&other) noexcept = default;
-        BufferManager &operator=(BufferManager &&other) noexcept = default;
+        BufferManager(BufferManager &&other) noexcept = delete;
+        BufferManager &operator=(BufferManager &&other) noexcept = delete;
+
+        std::vector<char> &get_buffer() noexcept { return buffer_; };
+
+        [[nodiscard]] size_t get_cursor() const noexcept { return cursor_; };
+
+        // Warning, by setting the cursor at buffer.size(), we simulate vect::end() iterator behavior
+        // but the cursor shouldn't be used for indexing the buffer. There are risks of exception using
+        // buffer_[cursor_] so don't do that.
+        void set_cursor(const size_t n) noexcept { cursor_ = n >= buffer_.size() ? buffer_.size() : n; };
+
+        // consume the data from the beginning up to the cursor position
+        void consume()
+        {
+            buffer_.erase(buffer_.begin(), buffer_.begin() + static_cast<int>(cursor_));
+            cursor_ = 0;
+        }
+
+        // returns the number of chars from the actual beginning of the vector to the actual cursor position
+        // very useful in tests
+        [[nodiscard]] std::size_t count_left() const noexcept
+        {
+            return std::distance(buffer_.cbegin(), buffer_.cbegin() + static_cast<int>(cursor_));
+        }
+
+        // returns the number of chars from the actual position of the cursor to the end of the buffer
+        // very useful in tests
+        [[nodiscard]] std::size_t count_right() const noexcept
+        {
+            return std::distance(buffer_.cbegin() + static_cast<int>(cursor_), buffer_.cend());
+        }
 
         /**
-         * @brief Adds a chunk of data to the BufferManager. The decoder is supposed to be filled
-         * from an external source (network stream, for instance). We expect this source to
-         * produce temp buffers which are then added to the decoder to allow the processing
-         * of complete RESP frames.
-         *
-         * @param chunk A temporary buffer containing a chunk of data to be decoded.
-         */
-        void add_upstream_data(seastar::temporary_buffer<char> chunk) noexcept;
-
-        /**
-         * @brief get_simple_string tries to decode a simple string as defined in RESP3.
-         * A simple string is a string which does not contain any of CR or LF in it.
-         * This function reset the internal cursor back to its initial state if an error occurs.
-         * The internal cursor is set to the next position to read from and the successful data is consumed from the
-         * buffer group.
-         * This variant checks that there is no single CR or LF before a CRLF and fires an error in such cases.
+         * @brief Get_simple_string tries to decode a simple string as defined in RESP3.
+         * A simple string is a string that doesn't contain any of CR or LF in it.
+         * This function
          *
          * @return a string or an error
          */
@@ -73,65 +90,17 @@ namespace redis {
 
         /**
          * @brief get_bulk_string gets a string from the buffer given it length. The bulk string is also terminated
-         * by CRLF so this methods checks that and returns an error if needed.
+         * by CRLF so these methods check that and return an error if needed.
          *
          * @param length
          * @return
          */
         std::expected<std::string, FrameDecodeError> get_bulk_string(size_t length) noexcept;
 
-
-        /**
-         * @brief get_current_buffer_size returns the size of the actual internal buffer.
-         *
-         * @return
-         */
-        size_t get_current_buffer_size() {
-            if (_data.empty())
-                return 0;
-            return _data[0].size();
-        };
-
-        /**
-         * @brief get_buffer_number returns the number of internal buffers.
-         *
-         * @return
-         */
-        size_t get_buffer_number() { return _data.size(); };
-
-        /**
-         * @brief advance advance the current buffer by n. It removes the buffer if n height than the actual buffer
-         * size. n should be the index of the next char to be processed.
-         *
-         * @param n
-         */
-        void trim_front(size_t n);
-
-        /**
-         * @brief pop_front removes a buffer from the front of the queue. Warning! This method set back the cursor to
-         * 0. Because we expect to start reading the next buffer from index 0.
-         */
-        void pop_front() noexcept;
-
-        /**
-         * @brief advance consume away (throw) n bytes from the buffer
-         *
-         * @param n
-         */
-        // @TODO, make advance returns the number of bytes effectively advanced, in case n > number of available chars
-        void advance(size_t n) noexcept;
-
         std::expected<int64_t, FrameDecodeError> get_int() noexcept;
 
         /**
-         * @brief get_total_size returns the actual number of bytes in the BufferManager
-         *
-         * @return
-         */
-        size_t get_total_size() noexcept;
-
-        /**
-         * @brief get_simple_frame_variant decodes a frame which has a simple string as internal data.
+         * @brief get_simple_frame_variant decodes a frame that has a simple strings as internal data.
          * So for now, it decodes SimpleString, SimpleError, BigNumber.
          *
          * @return
@@ -151,7 +120,18 @@ namespace redis {
         std::expected<Frame, FrameDecodeError> get_boolean_frame() noexcept;
 
         std::expected<Frame, FrameDecodeError> get_null_frame() noexcept;
-    };
-} // namespace redis
 
-#endif // PROTOCOL_H
+        std::expected<Frame, FrameDecodeError> get_array_frame() noexcept;
+
+        // get the id of a frame from the buffer. Consume the actual byte.
+        // Do not call it on an empty buffer!
+        FrameID get_frame_id();
+
+        [[nodiscard]] bool has_data() const noexcept { return cursor_ < buffer_.size(); }
+
+        // decode tries to identify the incoming frame and decode ir
+        std::expected<Frame, FrameDecodeError> decode_frame() noexcept;
+    };
+}  // namespace redis
+
+#endif  // PROTOCOL_H

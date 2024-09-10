@@ -1,158 +1,108 @@
-#include <iostream>
 #include <protocol.hh>
 #include <set>
+#include <stack>
 #include <string>
 
-namespace redis {
-    void BufferManager::add_upstream_data(seastar::temporary_buffer<char> chunk) noexcept {
-        this->_data.emplace_back(std::move(chunk));
-    }
-
-
-    std::expected<std::string, FrameDecodeError> BufferManager::_read_simple_string() noexcept {
-        if (this->_data.empty()) {
+namespace redis
+{
+    std::expected<std::string, FrameDecodeError> BufferManager::get_simple_string() noexcept
+    {
+        if (this->buffer_.empty())
+        {
             return std::unexpected(FrameDecodeError::Empty);
         }
 
-        std::string result;
-        for (const auto &buf: this->_data) {
-            for (int i = 0; i < buf.size(); ++i) {
-                auto c = buf[i];
-                switch (c) {
-                    case '\r':
-                        if (i == buf.size() - 1) {
-                            return std::unexpected(FrameDecodeError::Incomplete);
-                        }
-                        if (buf[i + 1] != '\n') {
-                            // trim the faulty data
-                            this->advance(result.size() + 1);
-                            return std::unexpected(FrameDecodeError::Invalid);
-                        }
-                        return result;
-                    case '\n':
-                        this->advance(result.size() + 1);
+        const size_t size = this->buffer_.size();
+        const auto prev_cursor_position = this->buffer_.cbegin() + static_cast<int>(cursor_);
+
+        for (size_t i = this->cursor_; i < size; ++i)
+        {
+            switch (this->buffer_[i])
+            {
+                case '\r':
+                    if (i + 1 >= size)
+                    {
+                        return std::unexpected(FrameDecodeError::Incomplete);
+                    }
+                    if (this->buffer_[i + 1] != '\n')
+                    {
+                        // Invalid frame. Throw away up to \r included
+                        this->set_cursor(i + 1);
                         return std::unexpected(FrameDecodeError::Invalid);
-                    default:
-                        result.push_back(c);
-                }
+                    }
+                    // success, move the cursor after CRLF. As we are at CR, we need to move 2 steps.
+                    this->set_cursor(i + 2);
+                    // Don't include CRLF so the left boundary should be CR non-inclusive
+                    return std::string(prev_cursor_position, this->buffer_.cbegin() + static_cast<int>(i));
+                case '\n':
+                    // Invalid: isolated LF, consume up to the LF included
+                    this->set_cursor(i + 1);
+                    return std::unexpected(FrameDecodeError::Invalid);
+                default:;
             }
         }
+
+        // Incomplete sequence: end of buffer reached without finding CRLF
         return std::unexpected(FrameDecodeError::Incomplete);
     }
 
-    std::expected<std::string, FrameDecodeError> BufferManager::_read_bulk_string(size_t n) noexcept {
-        if (this->_data.empty()) {
+    std::expected<std::string, FrameDecodeError> BufferManager::get_bulk_string(const size_t length) noexcept
+    {
+        if (this->buffer_.empty())
+        {
             return std::unexpected(FrameDecodeError::Empty);
         }
 
-        // Do we have enough data to decode the bulk frame ?
-        if (this->get_total_size() < n + 2) {
+        // Do we have enough data to decode the bulk frame?
+        if (this->buffer_.size() - cursor_ < length + 2)
+        {
             return std::unexpected(FrameDecodeError::Incomplete);
         }
 
-        // Let's actually read the data we know is enough
-        std::string str_read;
-        size_t buffer_index{0};
-        for (; buffer_index < this->get_buffer_number(); ++buffer_index) {
-            auto &current_buf = _data[buffer_index];
-            if (str_read.size() + current_buf.size() <= n + 2) {
-                str_read.append(current_buf.get(), current_buf.size());
-            } else {
-                break;
-            }
-        }
+        // save the startup position
+        const auto left = this->buffer_.cbegin() + static_cast<int>(cursor_);
 
-        // At this point, we know the next buffer has enough data for the rest to decode
-        size_t bytes_num_left = n + 2 - str_read.size();
-        str_read.append(this->_data[buffer_index].get(), bytes_num_left);
-        auto maybe_crlf = str_read.substr(str_read.length() - 2, 2);
-
-        // now check if it is ending with CRLF
-        if (maybe_crlf != "\r\n") {
-            // throw away the faulty bytes
-            this->advance(n + 2);
+        if (this->buffer_[length + cursor_] != '\r' || this->buffer_[length + cursor_ + 1] != '\n')
+        {
+            // move the cursor after what is supposed to be the end of the frame
+            // we need to move to the next char to process
+            this->set_cursor(cursor_ + length + 2);
             return std::unexpected(FrameDecodeError::Invalid);
         }
 
-        str_read.resize(str_read.size() - 2);
-        return str_read;
+        // Let's actually read the data we know is enough
+        this->set_cursor(cursor_ + length + 2);
+        return std::string(left, left + static_cast<int>(length));
     }
 
-    std::expected<std::string, FrameDecodeError> BufferManager::get_simple_string() noexcept {
-        auto result = this->_read_simple_string();
-        if (!result.has_value()) {
-            return std::unexpected(result.error());
-        }
-        this->advance(result->size() + 2);
-        return result;
-    }
-
-    std::expected<std::string, FrameDecodeError> BufferManager::get_bulk_string(size_t length) noexcept {
-        auto result = this->_read_bulk_string(length);
-        if (!result.has_value()) {
-            return std::unexpected(result.error());
-        }
-        this->advance(length + 2);
-        return result;
-    }
-
-    size_t BufferManager::get_total_size() noexcept {
-        size_t ans{0};
-        for (const auto &buf: this->_data) {
-            ans += buf.size();
-        }
-        return ans;
-    }
-
-    void BufferManager::advance(size_t n) noexcept {
-        size_t bytes_to_consume = n;
-
-        while (bytes_to_consume > 0 && !this->_data.empty()) {
-            auto &current_buf = this->_data.front();
-            size_t buf_size = current_buf.size();
-
-            if (buf_size <= bytes_to_consume) {
-                // We need to consume the entire buffer
-                bytes_to_consume -= buf_size;
-                this->_data.pop_front();
-            } else {
-                // We need to consume part of this buffer
-                current_buf.trim_front(bytes_to_consume);
-                bytes_to_consume = 0;
-            }
-        }
-    }
-
-    std::expected<int64_t, FrameDecodeError> BufferManager::get_int() noexcept {
+    std::expected<int64_t, FrameDecodeError> BufferManager::get_int() noexcept
+    {
         auto str_result = this->get_simple_string();
-        if (!str_result.has_value()) {
+        if (!str_result.has_value())
+        {
             return std::unexpected(str_result.error());
         }
-        try {
+        try
+        {
             int64_t result = std::stoll(str_result.value());
             return result;
-        } catch (const std::exception &_) {
+        }
+        catch (const std::exception &_)
+        {
             //@TODO log the error
             return std::unexpected(FrameDecodeError::Atoi);
         }
     }
 
-    void BufferManager::trim_front(size_t n) {
-        if (n < this->get_current_buffer_size()) {
-            this->_data.front().trim_front(n);
-        } else {
-            this->pop_front();
-        }
-    }
-
-    void BufferManager::pop_front() noexcept { this->_data.pop_front(); }
-
-    std::expected<Frame, FrameDecodeError> BufferManager::get_simple_frame_variant(FrameID frame_id) noexcept {
-        if (!std::set<FrameID>{FrameID::SimpleString, FrameID::SimpleError, FrameID::BigNumber}.contains(frame_id)) {
+    std::expected<Frame, FrameDecodeError> BufferManager::get_simple_frame_variant(const FrameID frame_id) noexcept
+    {
+        if (!std::set{FrameID::SimpleString, FrameID::SimpleError, FrameID::BigNumber}.contains(frame_id))
+        {
             return std::unexpected(FrameDecodeError::WrongArgsType);
         }
         auto frame_data = this->get_simple_string();
-        if (!frame_data.has_value()) {
+        if (!frame_data.has_value())
+        {
             return std::unexpected(frame_data.error());
         }
         Frame frame = Frame::make_frame(frame_id);
@@ -160,16 +110,20 @@ namespace redis {
         return frame;
     }
 
-    std::expected<Frame, FrameDecodeError> BufferManager::get_bulk_frame_variant(FrameID frame_id) noexcept {
-        if (!std::set<FrameID>{FrameID::BulkString, FrameID::BulkError}.contains(frame_id)) {
+    std::expected<Frame, FrameDecodeError> BufferManager::get_bulk_frame_variant(const FrameID frame_id) noexcept
+    {
+        if (!std::set{FrameID::BulkString, FrameID::BulkError}.contains(frame_id))
+        {
             return std::unexpected(FrameDecodeError::WrongArgsType);
         }
         auto size = this->get_int();
-        if (!size.has_value()) {
+        if (!size.has_value())
+        {
             return std::unexpected(size.error());
         }
         auto frame_data = this->get_bulk_string(size.value());
-        if (!frame_data.has_value()) {
+        if (!frame_data.has_value())
+        {
             return std::unexpected(frame_data.error());
         }
         Frame frame = Frame::make_frame(frame_id);
@@ -177,9 +131,11 @@ namespace redis {
         return frame;
     }
 
-    std::expected<Frame, FrameDecodeError> BufferManager::get_integer_frame() noexcept {
+    std::expected<Frame, FrameDecodeError> BufferManager::get_integer_frame() noexcept
+    {
         auto frame_data = this->get_int();
-        if (!frame_data.has_value()) {
+        if (!frame_data.has_value())
+        {
             return std::unexpected(frame_data.error());
         }
         Frame frame = Frame::make_frame(FrameID::Integer);
@@ -187,29 +143,215 @@ namespace redis {
         return frame;
     }
 
-    std::expected<Frame, FrameDecodeError> BufferManager::get_boolean_frame() noexcept {
+    std::expected<Frame, FrameDecodeError> BufferManager::get_boolean_frame() noexcept
+    {
         auto frame_data = this->get_simple_string();
-        if (!frame_data.has_value()) {
+        if (!frame_data.has_value())
+        {
             return std::unexpected(frame_data.error());
         }
-        if (frame_data.value() != "t" && frame_data.value() != "f") {
+        if (frame_data.value() != "t" && frame_data.value() != "f")
+        {
             return std::unexpected(FrameDecodeError::Invalid);
         }
         Frame frame = Frame::make_frame(FrameID::Boolean);
-        if (frame_data.value() != "t") {
-            frame.data = true;
-        } else {
-            frame.data = false;
-        }
+        frame.data = (frame_data.value() == "t");
         return frame;
     }
 
-    std::expected<Frame, FrameDecodeError> BufferManager::get_null_frame() noexcept {
-        auto frame_data = this->get_simple_string();
-        if (!frame_data.has_value()) {
+    std::expected<Frame, FrameDecodeError> BufferManager::get_null_frame() noexcept
+    {
+        if (auto frame_data = this->get_simple_string(); !frame_data.has_value())
+        {
             return std::unexpected(frame_data.error());
         }
         return Frame::make_frame(FrameID::Null);
     }
 
-} // namespace redis
+    std::expected<Frame, FrameDecodeError> BufferManager::get_array_frame() noexcept
+    {
+        return this->_get_aggregate_frame(FrameID::Array);
+    }
+
+    FrameID BufferManager::get_frame_id()
+    {
+        assert(!this->buffer_.empty());
+        const auto frame_token = *(buffer_.begin() + static_cast<int>(cursor_));
+        this->set_cursor(this->cursor_ + 1);
+        return frame_id_from_u8(frame_token);
+    }
+
+
+    std::expected<Frame, FrameDecodeError> BufferManager::decode_frame() noexcept
+    {
+        if (this->buffer_.empty())
+        {
+            return std::unexpected(FrameDecodeError::Empty);
+        }
+
+        std::expected<Frame, FrameDecodeError> result;
+        switch (const auto frame_id = this->get_frame_id())
+        {
+            case FrameID::SimpleString:
+            case FrameID::SimpleError:
+            case FrameID::BigNumber:
+                result = this->get_simple_frame_variant(frame_id);
+                break;
+            case FrameID::BulkString:
+            case FrameID::BulkError:
+                result = this->get_bulk_frame_variant(frame_id);
+                break;
+            case FrameID::Integer:
+                result = this->get_integer_frame();
+                break;
+            case FrameID::Boolean:
+                result = this->get_boolean_frame();
+                break;
+            case FrameID::Null:
+                result = this->get_null_frame();
+                break;
+            case FrameID::Array:
+                result = this->get_array_frame();
+                break;
+            default:
+                result = std::unexpected(FrameDecodeError::UndefinedFrame);
+        }
+        // Do not consume in case of incomplete frame.
+        // In all other cases, consume the processed data.
+        if (result.has_value() || result.error() != FrameDecodeError::Incomplete)
+        {
+            this->consume();
+        }
+        else if (result.error() == FrameDecodeError::Incomplete)
+        {
+            // bring back the cursor to the beginning of the stream as we try to decode again from the beginning.
+            // For this reason, the user should evaluate the sizes of most frames and set the buffer size accordingly.
+            // Because it can be costly to don't decode a full frame in one shot.
+            this->set_cursor(0);
+        }
+        return result;
+    }
+
+    std::expected<Frame, FrameDecodeError> BufferManager::_get_aggregate_frame(FrameID frame_type) noexcept
+    {
+        // "3\r\n:1\r\n:2\r\n:3\r\n" -> [1, 2, 3]
+        // "*2\r\n:1\r\n*1\r\n+Three\r\n&&" -> [1, ["Tree"]]
+
+        // @TODO: double size if frame type is map
+        const auto maybe_size = this->get_int();
+        if (!maybe_size.has_value())
+        {
+            return std::unexpected(maybe_size.error());
+        }
+
+        auto size = maybe_size.value();
+        std::vector<Frame> frames;
+        frames.reserve(size);
+        // we keep track of
+        // 1. the type of aggregate frame we need to process
+        // 2. the number inner frames left to decode
+        // 3. The container where we store the frames for the current aggregate
+        std::stack<std::tuple<FrameID, int64_t, std::vector<Frame>>> stack;
+        stack.emplace(frame_type, size, frames);
+
+        while (!stack.empty())
+        {
+            // get the next frame type
+            if (!this->has_data())
+            {
+                // we expect more data as we are not done yet.
+                return std::unexpected(FrameDecodeError::Incomplete);
+            }
+
+            auto next_frame_id = this->get_frame_id();
+
+            // is the next frame also aggregate?
+            if (is_aggregate_frame(next_frame_id))
+            {
+                const auto maybe_next_size = this->get_int();
+                if (!maybe_next_size.has_value())
+                {
+                    return std::unexpected(maybe_next_size.error());
+                }
+                stack.emplace(next_frame_id, maybe_next_size.value(), std::vector<Frame>{});
+                continue;
+            }
+
+            auto next_frame = this->_get_non_aggregate_frame(next_frame_id);
+            if (!next_frame.has_value())
+            {
+                return std::unexpected(next_frame.error());
+            }
+            // append the frame in place
+            auto &latest_tuple = stack.top();
+            std::get<2>(latest_tuple).push_back(std::move(next_frame.value()));
+            --std::get<1>(latest_tuple);
+
+            // If count == 0, we've decoded an entire array.
+            // So push it to the penultimate
+            // aggregate in the stack if any.
+            // If there's no more array in the stack, this means
+            // we should return as the total frame was completely processed.
+            if (std::get<1>(latest_tuple) == 0)
+            {
+                while (true)
+                {
+                    // Warning here! we need to copy or move as using the reference would let the value
+                    // in an undefined state.
+                    auto parent_tuple = std::move(stack.top());
+                    stack.pop();
+                    // The full global frame was decoded, so return it
+                    if (stack.empty())
+                    {
+                        // Here is why we needed to keep track of the IDs,
+                        // to build the right aggregate.
+                        Frame final_result = Frame::make_frame(std::get<0>(parent_tuple));
+                        final_result.data = std::move(std::get<2>(parent_tuple));
+                        return final_result;
+                    }
+                    // we fully decoded an intermediate aggregate but not the full global frame
+                    auto &child_tuple = stack.top();
+                    Frame child_aggregate_frame = Frame::make_frame(std::get<0>(child_tuple));
+                    child_aggregate_frame.data = std::move(std::get<2>(parent_tuple));
+                    std::get<2>(child_tuple).push_back(std::move(child_aggregate_frame));
+                    --std::get<1>(child_tuple);
+                    // 0 means there are no longer frame to process for the child, so we should continue to
+                    // pop and push already processed one. Anything different to 0 means we have to continue to
+                    // process new frames. This is why we need to exit the loop in this case.
+                    if (std::get<1>(child_tuple) != 0)
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+        return std::unexpected(FrameDecodeError::Invalid);
+    }
+
+    std::expected<Frame, FrameDecodeError> BufferManager::_get_non_aggregate_frame(FrameID frame_id) noexcept
+    {
+        assert(!is_aggregate_frame(frame_id));
+        std::expected<Frame, FrameDecodeError> result;
+        if (is_bulk_frame(frame_id))
+        {
+            result = this->get_bulk_frame_variant(frame_id);
+        }
+        else if (is_simple_frame(frame_id))
+        {
+            result = this->get_simple_frame_variant(frame_id);
+        }
+        else if (frame_id == FrameID::Integer)
+        {
+            result = this->get_integer_frame();
+        }
+        else if (frame_id == FrameID::Boolean)
+        {
+            result = this->get_boolean_frame();
+        }
+        else
+        {
+            result = this->get_null_frame();
+        }
+        return result;
+    }
+}  // namespace redis

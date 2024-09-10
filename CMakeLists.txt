@@ -43,7 +43,7 @@ add_library(resp3_lib ${RESP3_SOURCES} ${RESP3_HEADERS})
 set(SERVER_HEADERS include/server.hh include/connection.hh include/protocol.hh)
 set(SERVER_SOURCES src/server.cc src/connection.cc src/protocol.cc)
 add_library(server_lib ${SERVER_SOURCES} ${SERVER_HEADERS})
-target_link_libraries(server_lib PRIVATE Seastar::seastar)
+target_link_libraries(server_lib PRIVATE Boost::headers)
 
 add_executable(redis main.cpp)
 target_link_libraries(redis PRIVATE Seastar::seastar server_lib resp3_lib)
@@ -53,7 +53,7 @@ target_link_libraries(redis PRIVATE Seastar::seastar server_lib resp3_lib)
 # #####################################################################################################################
 enable_testing()
 add_executable(protocol_test tests/protocol_test.cc)
-target_link_libraries(protocol_test GTest::gtest_main server_lib)
+target_link_libraries(protocol_test GTest::gtest_main server_lib resp3_lib)
 add_test(NAME protocol_test COMMAND protocol_test)
 
 include(GNUInstallDirs)

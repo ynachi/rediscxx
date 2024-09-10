@@ -5,28 +5,57 @@
 #ifndef SERVER_HH
 #define SERVER_HH
 
-#include <seastar/net/api.hh>
-#include <seastar/util/log.hh>
+#include <boost/asio.hpp>
 
-namespace redis {
-    class Server {
+namespace redis
+{
+    using boost::asio::awaitable;
+    using boost::asio::detached;
+    using boost::asio::ip::tcp;
+
+    class Server : public std::enable_shared_from_this<Server>
+    {
+        struct Private
+        {
+            explicit Private() = default;
+        };
+
     public:
-        Server(const std::string &ip_addr, u_int16_t port, bool reuse_addr);
+        std::shared_ptr<Server> get_ptr() { return shared_from_this(); }
+
+        Server(Private, const tcp::endpoint &endpoint, bool reuse_addr, size_t num_threads);
+
+        static std::shared_ptr<Server> create(const tcp::endpoint &endpoint, bool reuse_addr, size_t num_threads)
+        {
+            return std::make_shared<Server>(Private(), endpoint, reuse_addr, num_threads);
+        }
+
+        ~Server()
+        {
+            std::cout << "Server destructor called. Cleaning up resources." << std::endl;
+            // Explicit cleanup if needed (for example, stopping io_context)
+            _acceptor.close();
+            _io_ctx.stop();
+        }
 
         Server(const Server &) = delete;
 
         Server &operator=(const Server &) = delete;
 
-        Server(Server &&) noexcept;
+        Server(Server &&) noexcept = delete;
 
-        Server &operator=(Server &&) noexcept;
+        Server &operator=(Server &&) noexcept = delete;
 
-        seastar::future<> listen();
+        awaitable<void> listen();
+
+        void run();
 
     private:
-        seastar::lw_shared_ptr<seastar::logger> _logger;
-        seastar::server_socket _listener;
+        boost::asio::io_context _io_ctx;
+        tcp::acceptor _acceptor;
+        size_t thread_number_ = 10;
+        boost::asio::signal_set signals_;
     };
-} // namespace redis
+}  // namespace redis
 
-#endif // SERVER_HH
+#endif  // SERVER_HH

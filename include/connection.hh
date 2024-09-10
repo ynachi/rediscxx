@@ -5,32 +5,34 @@
 #ifndef CONNECTION_HH
 #define CONNECTION_HH
 
-#include <seastar/net/api.hh>
-#include <seastar/util/log.hh>
+#include <boost/asio.hpp>
+
 #include "protocol.hh"
 
-namespace redis {
-    class Connection : public std::enable_shared_from_this<Connection> {
-        struct Private {
+namespace redis
+{
+    using boost::asio::awaitable;
+    using boost::asio::use_awaitable;
+    using boost::asio::ip::tcp;
+
+    class Connection : public std::enable_shared_from_this<Connection>
+    {
+        struct Private
+        {
             explicit Private() = default;
         };
 
     public:
-        seastar::future<> process_frames();
+        awaitable<void> process_frames();
 
         std::shared_ptr<Connection> get_ptr() { return shared_from_this(); }
 
-        static std::shared_ptr<Connection> create(seastar::accept_result accept_result,
-                                                  const seastar::lw_shared_ptr<seastar::logger> &logger) {
-            return std::make_shared<Connection>(Private(), std::move(accept_result), logger);
+        static std::shared_ptr<Connection> create(tcp::socket socket)
+        {
+            return std::make_shared<Connection>(Private(), std::move(socket));
         }
 
-        explicit Connection(Private, seastar::accept_result accept_result,
-                            const seastar::lw_shared_ptr<seastar::logger> &logger) noexcept :
-            _input_stream(accept_result.connection.input()), _output_stream(accept_result.connection.output()),
-            _remote_address(accept_result.remote_address), _logger(logger), _buffer() {
-            this->_logger->info("server accepted a new connection {}", this->_remote_address);
-        }
+        Connection(Private, tcp::socket socket) noexcept : _socket(std::move(socket)) {}
 
         // Delete all other constructors to enforce factory method usage
         Connection(const Connection &) = delete;
@@ -41,14 +43,20 @@ namespace redis {
 
         Connection &operator=(Connection &&) = delete;
 
+        ~Connection()
+        {
+            if (_socket.is_open())
+            {
+                _socket.shutdown(tcp::socket::shutdown_both);
+            }
+        }
+
     private:
-        seastar::input_stream<char> _input_stream;
-        seastar::output_stream<char> _output_stream;
-        seastar::socket_address _remote_address;
-        seastar::lw_shared_ptr<seastar::logger> _logger;
-        BufferManager _buffer;
+        tcp::socket _socket;
+        BufferManager decoder_;
+        size_t read_chunk_size_ = 1024;
     };
-} // namespace redis
+}  // namespace redis
 
 
-#endif // CONNECTION_HH
+#endif  // CONNECTION_HH
