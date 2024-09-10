@@ -14,10 +14,11 @@ namespace redis
     struct Frame
     {
         FrameID frame_id;
-        // vector is used for all aggregate frames. For maps, we double the number of elements. Each k,v are adjacents
-        // in the vector.
-        std::variant<std::monostate, std::string, int64_t, bool, std::pair<size_t, std::string>, std::vector<Frame>>
-                data;
+        // Vector is used for all aggregate frames.
+        // For maps, we double the number of elements.
+        // Each k,v is adjacent to the vector.
+        // @TODO use std::optional<std::string> to allow to represent null nulk strings
+        std::variant<std::monostate, std::string, int64_t, bool, std::vector<Frame>> data;
 
         static Frame make_frame(const FrameID& frame_id);
 

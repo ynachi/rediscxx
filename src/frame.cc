@@ -16,10 +16,9 @@ namespace redis
             case FrameID::SimpleString:
             case FrameID::SimpleError:
             case FrameID::BigNumber:
-                return Frame(frame_id, std::string{});
             case FrameID::BulkString:
             case FrameID::BulkError:
-                return Frame(frame_id, std::pair{size_t{0}, std::string{}});
+                return Frame(frame_id, std::string{});
             case FrameID::Boolean:
                 return Frame(frame_id, false);
             case FrameID::Null:
