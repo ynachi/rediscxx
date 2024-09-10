@@ -137,7 +137,7 @@ TEST_F(BufferManagerTest, GetBool)
     append_str(buffer, "t\r\na26\r\n");
 
     const auto result = decoder.get_boolean_frame();
-    auto ans = Frame{FrameID::Boolean, true};
+    const auto ans = Frame{FrameID::Boolean, true};
     EXPECT_EQ(result.value(), ans);
 }
 
@@ -147,7 +147,7 @@ TEST_F(BufferManagerTest, GetNull)
     append_str(buffer, "t\r\na26\r\n");
 
     const auto result = decoder.get_null_frame();
-    auto ans = Frame{
+    const auto ans = Frame{
             FrameID::Null,
     };
     EXPECT_EQ(result.value(), ans);
@@ -233,10 +233,10 @@ TEST_F(BufferManagerTest, DecodeSimpleArray)
     auto& buffer = decoder.get_buffer();
     append_str(buffer, "*3\r\n:1\r\n+Two\r\n$5\r\nThree\r\n");
 
-    auto result = decoder.decode_frame();
+    const auto result = decoder.decode_frame();
     auto vect = std::vector{Frame{FrameID::Integer, 1}, Frame{FrameID::SimpleString, "Two"},
                             Frame{FrameID::BulkString, "Three"}};
-    auto ans = Frame{FrameID::Array, std::move(vect)};
+    const auto ans = Frame{FrameID::Array, std::move(vect)};
     EXPECT_EQ(result.value(), ans) << "can decode a simple string with start a stream";
 }
 
@@ -245,10 +245,10 @@ TEST_F(BufferManagerTest, DecodeNestedArray)
     auto& buffer = decoder.get_buffer();
     append_str(buffer, "*2\r\n:1\r\n*1\r\n+Three\r\n");
 
-    auto result = decoder.decode_frame();
+    const auto result = decoder.decode_frame();
     auto inner_vect = std::vector{Frame{FrameID::SimpleString, "Three"}};
     auto vect = std::vector{Frame{FrameID::Integer, 1}, Frame{FrameID::Array, inner_vect}};
-    auto ans = Frame{FrameID::Array, std::move(vect)};
+    const auto ans = Frame{FrameID::Array, std::move(vect)};
     EXPECT_EQ(result.value(), ans) << "can decode a simple string with start a stream";
 }
 
