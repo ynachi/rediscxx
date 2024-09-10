@@ -224,9 +224,9 @@ namespace redis
         }
         else if (result.error() == FrameDecodeError::Incomplete)
         {
-            // bring back the cursor to the begining of the stream as we will try to decode again from the beginning.
+            // bring back the cursor to the beginning of the stream as we try to decode again from the beginning.
             // For this reason, the user should evaluate the sizes of most frames and set the buffer size accordingly.
-            // Because it can be costly to do not decode a full frame in one shot.
+            // Because it can be costly to don't decode a full frame in one shot.
             this->set_cursor(0);
         }
         return result;
