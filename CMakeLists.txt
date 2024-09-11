@@ -56,6 +56,10 @@ add_executable(protocol_test tests/protocol_test.cc)
 target_link_libraries(protocol_test GTest::gtest_main server_lib resp3_lib)
 add_test(NAME protocol_test COMMAND protocol_test)
 
+add_executable(frame_test tests/frame_test.cc)
+target_link_libraries(frame_test GTest::gtest_main resp3_lib)
+add_test(NAME frame_test COMMAND frame_test)
+
 include(GNUInstallDirs)
 install(TARGETS redis
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

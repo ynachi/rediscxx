@@ -51,7 +51,7 @@ namespace redis
             {
                 std::stringstream ss;
                 const auto &frame_value = std::get<std::vector<Frame>>(this->data);
-                ss << '*' << frame_value.size();
+                ss << '*' << frame_value.size() << "\r\n";
                 for (const auto &item: frame_value)
                 {
                     ss << item.to_string();
