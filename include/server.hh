@@ -6,6 +6,7 @@
 #define SERVER_HH
 
 #include <boost/asio.hpp>
+#include <iostream>
 
 namespace redis
 {

@@ -3,6 +3,7 @@
 //
 #include <format>
 #include <frame.hh>
+#include <iostream>
 #include <sstream>
 
 namespace redis
@@ -40,12 +41,15 @@ namespace redis
             case FrameID::SimpleString:
             case FrameID::SimpleError:
             case FrameID::BigNumber:
+                std::cout << "Debug:to_string - simple" << '\n';
                 return std::format("{}{}\r\n", static_cast<char>(frame_id), std::get<std::string>(this->data));
             case FrameID::BulkString:
             case FrameID::BulkError:
+                std::cout << "Debug:to_string - bulk something" << '\n';
                 return std::format("{}{}\r\n{}\r\n", static_cast<char>(frame_id),
                                    std::get<std::string>(this->data).size(), std::get<std::string>(this->data));
             case FrameID::Boolean:
+                std::cout << "Debug:to_string - bool" << '\n';
                 return std::get<bool>(this->data) ? "#t\r\n" : "#f\r\n";
             case FrameID::Array:
             {
@@ -56,6 +60,7 @@ namespace redis
                 {
                     ss << item.to_string();
                 }
+                std::cout << "Debug:to_string" << ss.str() << '\n';
                 return ss.str();
             }
             case FrameID::Null:
