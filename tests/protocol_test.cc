@@ -1,6 +1,6 @@
-#include "protocol.hh"
-
 #include <gtest/gtest.h>
+
+#include "parser.hh"
 
 using namespace redis;
 class BufferManagerTest : public ::testing::Test

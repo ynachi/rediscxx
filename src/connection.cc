@@ -15,12 +15,10 @@ namespace redis
 
     awaitable<void> Connection::process_frames()
     {
-        auto const self = this->get_ptr();
-        std::cout << "before entered the loop: \n";
-        boost::asio::dynamic_vector_buffer buffer(self->decoder_.get_buffer());
+        boost::asio::dynamic_vector_buffer buffer(this->decoder_.get_buffer());
         for (;;)
         {
-            auto buffer_space = buffer.prepare(self->read_chunk_size_);
+            auto buffer_space = buffer.prepare(this->read_chunk_size_);
             const auto [e, n] = co_await _socket.async_read_some(buffer_space, use_nothrow_awaitable);
             if ((e && e == boost::asio::error::eof) || n == 0)
             {
@@ -36,21 +34,16 @@ namespace redis
             while (true)
             {
                 // Get a frame array representing a command
-                std::cout << "Calling decode_frame..." << std::endl;
                 if (auto output = this->decoder_.decode_frame(); output.has_value())
                 {
-                    std::cout << "After decode frame, debug" << std::endl;
                     try
                     {
-                        std::cout << "Before applying command" << std::endl;
-                        std::cout << "received a frame: " << output.value().to_string() << "\n" << std::flush;
                         auto command = Command::command_from_frame(output.value());
                         co_await this->apply_command(command);
-                        std::cout << "After applying command" << std::endl;
                     }
-                    catch (const std::exception& e)
+                    catch (const std::exception& ex)
                     {
-                        std::cerr << "Exception in processing frame: " << e.what() << std::endl;
+                        std::cerr << "Exception in processing frame: " << ex.what() << std::endl;
                     }
                 }
                 else

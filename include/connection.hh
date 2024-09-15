@@ -8,7 +8,7 @@
 #include <boost/asio.hpp>
 #include <commands.hh>
 
-#include "protocol.hh"
+#include "parser.hh"
 
 namespace redis
 {
