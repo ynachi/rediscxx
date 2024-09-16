@@ -4,6 +4,7 @@
 #include <commands.hh>
 #include <connection.hh>
 #include <iostream>
+#include <parser.hh>
 
 namespace redis
 {
@@ -36,6 +37,8 @@ namespace redis
                 // Get a frame array representing a command
                 if (auto output = this->decoder_.decode_frame(); output.has_value())
                 {
+                    std::cout << "process_frames: decoded frame\n";
+                    std::cout << "connection::process_frames: buffer " << this->decoder_ << "\n";
                     try
                     {
                         auto command = Command::command_from_frame(output.value());

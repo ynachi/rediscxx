@@ -3,7 +3,7 @@
 
 #include <boost/asio/ip/address.hpp>
 #include <expected>
-#include <seastar/core/temporary_buffer.hh>
+#include <format>
 
 #include "frame.hh"
 
@@ -29,7 +29,7 @@ namespace redis
      * to extract complete frames as defined by the Redis protocol.
      * We maintain an internal cursor which denotes where we sit in the next chunk of the process
      */
-    class BufferManager
+    class ProtocolParser
     {
         std::vector<char> buffer_;
         size_t cursor_ = 0;
@@ -42,12 +42,14 @@ namespace redis
         // helper method to get a non-aggregate frame
 
     public:
-        BufferManager(const BufferManager &) = delete;
-        BufferManager &operator=(const BufferManager &) = delete;
+        ProtocolParser(const ProtocolParser &) = delete;
+        ProtocolParser &operator=(const ProtocolParser &) = delete;
 
-        BufferManager() noexcept = default;
-        BufferManager(BufferManager &&other) noexcept = delete;
-        BufferManager &operator=(BufferManager &&other) noexcept = delete;
+        ProtocolParser() noexcept = default;
+        ProtocolParser(ProtocolParser &&other) noexcept = delete;
+        ProtocolParser &operator=(ProtocolParser &&other) noexcept = delete;
+
+        friend std::ostream &operator<<(std::ostream &os, const ProtocolParser &parser);
 
         std::vector<char> &get_buffer() noexcept { return buffer_; };
 

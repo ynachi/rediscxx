@@ -6,7 +6,7 @@ using namespace redis;
 class BufferManagerTest : public ::testing::Test
 {
 protected:
-    BufferManager decoder;
+    ProtocolParser decoder;
 
     void SetUp() override
     {
