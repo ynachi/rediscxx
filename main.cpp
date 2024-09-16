@@ -16,8 +16,8 @@ int main()
 
         const tcp::endpoint endpoint(boost::asio::ip::address::from_string("127.0.0.1"), 9292);
 
-        const auto server = redis::Server::create(endpoint, true, 8);
-        server->run();
+        const auto server = redis::Server::create(ctx, endpoint, true, 8);
+        server->start();
     }
     catch (std::exception &e)
     {

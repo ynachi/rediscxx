@@ -6,6 +6,8 @@
 #define SERVER_HH
 
 #include <boost/asio.hpp>
+#include <connection.hh>
+#include <iostream>
 
 namespace redis
 {
@@ -23,19 +25,21 @@ namespace redis
     public:
         std::shared_ptr<Server> get_ptr() { return shared_from_this(); }
 
-        Server(Private, const tcp::endpoint &endpoint, bool reuse_addr, size_t num_threads);
+        Server(Private, boost::asio::io_context &io_context, const tcp::endpoint &endpoint, bool reuse_addr,
+               size_t num_threads);
 
-        static std::shared_ptr<Server> create(const tcp::endpoint &endpoint, bool reuse_addr, size_t num_threads)
+        static std::shared_ptr<Server> create(boost::asio::io_context &io_context, const tcp::endpoint &endpoint,
+                                              bool reuse_addr, size_t num_threads)
         {
-            return std::make_shared<Server>(Private(), endpoint, reuse_addr, num_threads);
+            return std::make_shared<Server>(Private(), io_context, endpoint, reuse_addr, num_threads);
         }
 
         ~Server()
         {
             std::cout << "Server destructor called. Cleaning up resources." << std::endl;
             // Explicit cleanup if needed (for example, stopping io_context)
-            _acceptor.close();
-            _io_ctx.stop();
+            acceptor_.close();
+            io_context_.stop();
         }
 
         Server(const Server &) = delete;
@@ -48,11 +52,13 @@ namespace redis
 
         awaitable<void> listen();
 
-        void run();
+        void start();
+
+        static awaitable<void> start_session(std::shared_ptr<Connection> conn);
 
     private:
-        boost::asio::io_context _io_ctx;
-        tcp::acceptor _acceptor;
+        boost::asio::io_context &io_context_;
+        tcp::acceptor acceptor_;
         size_t thread_number_ = 10;
         boost::asio::signal_set signals_;
     };

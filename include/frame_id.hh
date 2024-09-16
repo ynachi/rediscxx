@@ -5,7 +5,6 @@
 #ifndef FRAME_ID_HH
 #define FRAME_ID_HH
 #include <cstdint>
-#include <optional>
 
 namespace redis
 {

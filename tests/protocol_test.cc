@@ -1,12 +1,12 @@
-#include "protocol.hh"
-
 #include <gtest/gtest.h>
+
+#include "parser.hh"
 
 using namespace redis;
 class BufferManagerTest : public ::testing::Test
 {
 protected:
-    BufferManager decoder;
+    ProtocolParser decoder;
 
     void SetUp() override
     {
@@ -252,6 +252,19 @@ TEST_F(BufferManagerTest, DecodeNestedArray)
     EXPECT_EQ(result.value(), ans) << "can decode a simple string with start a stream";
 }
 
+TEST_F(BufferManagerTest, DecodeSimpleArrayOfBulkString)
+{
+    auto& buffer = decoder.get_buffer();
+    append_str(buffer, "*1\r\n$4\r\nPING\r\n");
+
+    auto vect = std::vector{Frame{FrameID::BulkString, "PING"}};
+    const auto ans = Frame{FrameID::Array, std::move(vect)};
+
+    auto result = decoder.decode_frame();
+    EXPECT_EQ(result.value(), ans) << "can decode a simple string with start a stream";
+}
+
+
 TEST_F(BufferManagerTest, DecodeSimpleArrayIncomplete)
 {
     auto& buffer = decoder.get_buffer();
@@ -262,6 +275,7 @@ TEST_F(BufferManagerTest, DecodeSimpleArrayIncomplete)
     EXPECT_EQ(result.error(), FrameDecodeError::Incomplete) << "can spot incomplete frame array";
     EXPECT_EQ(buffer.size(), 23) << "incomplete decode should not consume the buffer";
 }
+
 
 TEST_F(BufferManagerTest, DecodeNestedArrayIncomplete)
 {

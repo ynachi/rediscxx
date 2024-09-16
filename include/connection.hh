@@ -6,8 +6,9 @@
 #define CONNECTION_HH
 
 #include <boost/asio.hpp>
+#include <commands.hh>
 
-#include "protocol.hh"
+#include "parser.hh"
 
 namespace redis
 {
@@ -24,6 +25,10 @@ namespace redis
 
     public:
         awaitable<void> process_frames();
+
+        // Apply_command actually runs the command. It's awaitable because it might involve some IO to send back
+        // the response to the user over the network.
+        awaitable<void> apply_command(const Command &command);
 
         std::shared_ptr<Connection> get_ptr() { return shared_from_this(); }
 
@@ -53,7 +58,7 @@ namespace redis
 
     private:
         tcp::socket _socket;
-        BufferManager decoder_;
+        ProtocolParser decoder_;
         size_t read_chunk_size_ = 1024;
     };
 }  // namespace redis

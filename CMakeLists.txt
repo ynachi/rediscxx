@@ -4,6 +4,9 @@ set(BUILD_SHARED_LIBS OFF) # We expect external libraries to be linked staticall
 project(redis LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 
+#add_compile_options(-fsanitize=address -g)
+#add_link_options(-fsanitize=address)
+
 set(REDISCXX_BUILD_SUPPORT_DIR "${CMAKE_SOURCE_DIR}/build_support")
 
 # #####################################################################################################################
@@ -40,13 +43,13 @@ set(RESP3_SOURCES src/frame_id.cc src/frame.cc)
 add_library(resp3_lib ${RESP3_SOURCES} ${RESP3_HEADERS})
 
 # server
-set(SERVER_HEADERS include/server.hh include/connection.hh include/protocol.hh)
-set(SERVER_SOURCES src/server.cc src/connection.cc src/protocol.cc)
+set(SERVER_HEADERS include/server.hh include/connection.hh include/parser.hh include/commands.hh include/strings.hh)
+set(SERVER_SOURCES src/server.cc src/connection.cc src/parser.cc src/commands.cc src/strings.cc)
 add_library(server_lib ${SERVER_SOURCES} ${SERVER_HEADERS})
 target_link_libraries(server_lib PRIVATE Boost::headers)
 
 add_executable(redis main.cpp)
-target_link_libraries(redis PRIVATE Seastar::seastar server_lib resp3_lib)
+target_link_libraries(redis PRIVATE server_lib resp3_lib)
 
 # #####################################################################################################################
 # TEST TARGETS

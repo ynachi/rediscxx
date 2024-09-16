@@ -1,17 +1,24 @@
-#include <protocol.hh>
+#include <iostream>
+#include <parser.hh>
 #include <set>
 #include <stack>
 #include <string>
 
 namespace redis
 {
-    std::expected<std::string, FrameDecodeError> BufferManager::get_simple_string() noexcept
+    std::ostream &operator<<(std::ostream &os, const ProtocolParser &parser)
+    {
+        os << std::format("Parser Buffer - Size={}, Content={}", parser.buffer_.size(),
+                          std::string(parser.buffer_.begin(), parser.buffer_.end()));
+        return os;
+    }
+
+    std::expected<std::string, FrameDecodeError> ProtocolParser::get_simple_string() noexcept
     {
         if (this->buffer_.empty())
         {
             return std::unexpected(FrameDecodeError::Empty);
         }
-
         const size_t size = this->buffer_.size();
         const auto prev_cursor_position = this->buffer_.cbegin() + static_cast<int>(cursor_);
 
@@ -46,7 +53,7 @@ namespace redis
         return std::unexpected(FrameDecodeError::Incomplete);
     }
 
-    std::expected<std::string, FrameDecodeError> BufferManager::get_bulk_string(const size_t length) noexcept
+    std::expected<std::string, FrameDecodeError> ProtocolParser::get_bulk_string(const size_t length) noexcept
     {
         if (this->buffer_.empty())
         {
@@ -75,7 +82,7 @@ namespace redis
         return std::string(left, left + static_cast<int>(length));
     }
 
-    std::expected<int64_t, FrameDecodeError> BufferManager::get_int() noexcept
+    std::expected<int64_t, FrameDecodeError> ProtocolParser::get_int() noexcept
     {
         auto str_result = this->get_simple_string();
         if (!str_result.has_value())
@@ -94,7 +101,7 @@ namespace redis
         }
     }
 
-    std::expected<Frame, FrameDecodeError> BufferManager::get_simple_frame_variant(const FrameID frame_id) noexcept
+    std::expected<Frame, FrameDecodeError> ProtocolParser::get_simple_frame_variant(const FrameID frame_id) noexcept
     {
         if (!std::set{FrameID::SimpleString, FrameID::SimpleError, FrameID::BigNumber}.contains(frame_id))
         {
@@ -110,7 +117,7 @@ namespace redis
         return frame;
     }
 
-    std::expected<Frame, FrameDecodeError> BufferManager::get_bulk_frame_variant(const FrameID frame_id) noexcept
+    std::expected<Frame, FrameDecodeError> ProtocolParser::get_bulk_frame_variant(const FrameID frame_id) noexcept
     {
         if (!std::set{FrameID::BulkString, FrameID::BulkError}.contains(frame_id))
         {
@@ -131,7 +138,7 @@ namespace redis
         return frame;
     }
 
-    std::expected<Frame, FrameDecodeError> BufferManager::get_integer_frame() noexcept
+    std::expected<Frame, FrameDecodeError> ProtocolParser::get_integer_frame() noexcept
     {
         auto frame_data = this->get_int();
         if (!frame_data.has_value())
@@ -143,7 +150,7 @@ namespace redis
         return frame;
     }
 
-    std::expected<Frame, FrameDecodeError> BufferManager::get_boolean_frame() noexcept
+    std::expected<Frame, FrameDecodeError> ProtocolParser::get_boolean_frame() noexcept
     {
         auto frame_data = this->get_simple_string();
         if (!frame_data.has_value())
@@ -159,7 +166,7 @@ namespace redis
         return frame;
     }
 
-    std::expected<Frame, FrameDecodeError> BufferManager::get_null_frame() noexcept
+    std::expected<Frame, FrameDecodeError> ProtocolParser::get_null_frame() noexcept
     {
         if (auto frame_data = this->get_simple_string(); !frame_data.has_value())
         {
@@ -168,12 +175,12 @@ namespace redis
         return Frame::make_frame(FrameID::Null);
     }
 
-    std::expected<Frame, FrameDecodeError> BufferManager::get_array_frame() noexcept
+    std::expected<Frame, FrameDecodeError> ProtocolParser::get_array_frame() noexcept
     {
         return this->_get_aggregate_frame(FrameID::Array);
     }
 
-    FrameID BufferManager::get_frame_id()
+    FrameID ProtocolParser::get_frame_id()
     {
         assert(!this->buffer_.empty());
         const auto frame_token = *(buffer_.begin() + static_cast<int>(cursor_));
@@ -182,8 +189,9 @@ namespace redis
     }
 
 
-    std::expected<Frame, FrameDecodeError> BufferManager::decode_frame() noexcept
+    std::expected<Frame, FrameDecodeError> ProtocolParser::decode_frame() noexcept
     {
+        std::cout << *this << "\n";
         if (this->buffer_.empty())
         {
             return std::unexpected(FrameDecodeError::Empty);
@@ -232,7 +240,7 @@ namespace redis
         return result;
     }
 
-    std::expected<Frame, FrameDecodeError> BufferManager::_get_aggregate_frame(FrameID frame_type) noexcept
+    std::expected<Frame, FrameDecodeError> ProtocolParser::_get_aggregate_frame(FrameID frame_type) noexcept
     {
         // "3\r\n:1\r\n:2\r\n:3\r\n" -> [1, 2, 3]
         // "*2\r\n:1\r\n*1\r\n+Three\r\n&&" -> [1, ["Tree"]]
@@ -328,7 +336,7 @@ namespace redis
         return std::unexpected(FrameDecodeError::Invalid);
     }
 
-    std::expected<Frame, FrameDecodeError> BufferManager::_get_non_aggregate_frame(FrameID frame_id) noexcept
+    std::expected<Frame, FrameDecodeError> ProtocolParser::_get_non_aggregate_frame(FrameID frame_id) noexcept
     {
         assert(!is_aggregate_frame(frame_id));
         std::expected<Frame, FrameDecodeError> result;
