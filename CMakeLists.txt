@@ -1,4 +1,7 @@
 cmake_minimum_required(VERSION 3.28)
+if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.30.0")
+    cmake_policy(SET CMP0167 OLD)
+endif ()
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # For clang-tidy.
 set(BUILD_SHARED_LIBS OFF) # We expect external libraries to be linked statically.
 project(redis LANGUAGES CXX)
@@ -21,6 +24,9 @@ else ()
     message(STATUS "redis/main found clang-format at ${CLANG_FORMAT_BIN}")
 endif ()
 
+# Photon
+include(cmake/FindPhoton.cmake)
+
 # Gtest
 include(cmake/FindGtest.cmake)
 
@@ -37,19 +43,24 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 # TARGETS
 # #####################################################################################################################
 
-# resp3
-set(RESP3_HEADERS include/frame_id.hh include/frame.hh)
-set(RESP3_SOURCES src/frame_id.cc src/frame.cc)
-add_library(resp3_lib ${RESP3_SOURCES} ${RESP3_HEADERS})
+# frame handler
+set(FRAME_HANDLER_HEADERS include/framer/handler.h include/framer/frame.h include/framer/frame_id.h)
+set(FRAME_HANDLER_SOURCES src/framer/handler.cpp src/framer/frame.cpp src/framer/frame_id.cpp)
+add_library(framer_lib ${FRAME_HANDLER_SOURCES} ${FRAME_HANDLER_HEADERS})
+target_link_libraries(framer_lib PRIVATE Boost::headers)
+target_link_libraries(framer_lib PRIVATE photon_static)
 
 # server
 set(SERVER_HEADERS include/server.hh include/connection.hh include/parser.hh include/commands.hh include/strings.hh)
 set(SERVER_SOURCES src/server.cc src/connection.cc src/parser.cc src/commands.cc src/strings.cc)
 add_library(server_lib ${SERVER_SOURCES} ${SERVER_HEADERS})
-target_link_libraries(server_lib PRIVATE Boost::headers)
+
 
 add_executable(redis main.cpp)
 target_link_libraries(redis PRIVATE server_lib resp3_lib)
+
+add_executable(poton src/poton.cpp)
+target_link_libraries(poton PRIVATE photon_static)
 
 # #####################################################################################################################
 # TEST TARGETS
@@ -62,6 +73,10 @@ add_test(NAME protocol_test COMMAND protocol_test)
 add_executable(frame_test tests/frame_test.cc)
 target_link_libraries(frame_test GTest::gtest_main resp3_lib)
 add_test(NAME frame_test COMMAND frame_test)
+
+add_executable(framer_test tests/framer/parser_test.cpp)
+target_link_libraries(framer_test GTest::gtest_main framer_lib photon_static)
+add_test(NAME framer_test COMMAND framer_test)
 
 include(GNUInstallDirs)
 install(TARGETS redis
