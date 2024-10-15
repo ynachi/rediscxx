@@ -1,5 +1,8 @@
+#include <chrono>
 #include <gtest/gtest.h>
 #include <photon/net/http/client.h>
+#include <photon/thread/std-compat.h>
+#include <photon/thread/thread11.h>
 
 #include "framer/handler.h"
 #include "photon/common/alog.h"
@@ -28,18 +31,57 @@ class BufferManagerTest : public ::testing::Test
 protected:
     Handler* handler_ = nullptr;
     photon::net::ISocketServer* server_ = nullptr;
+    photon::net::ISocketStream* client_stream = nullptr;
+    photon::net::ISocketStream* server_stream = nullptr;
+    photon_std::mutex mu;
+    photon_std::condition_variable cv;
+    bool connection_established = false;
 
     void SetUp() override
     {
         // Prepare a dummy server for tests
-        server_ = new_server("127.0.0.1", 8057);
+        const auto server_addr = photon::net::EndPoint(photon::net::IPAddr("127.0.0.1"), 8080);
 
-        // Prepare a dummy client/stream for test
-        auto client = photon::net::new_tcp_socket_client();
-        photon::net::EndPoint ep("127.0.0.1:8057");
+        // Create server socket
+        server_ = photon::net::new_tcp_socket_server();
+        server_->bind(server_addr);
+        server_->listen();
 
-        auto stream = client->connect(ep);
-        std::unique_ptr<photon::net::ISocketStream> stream_ptr(stream);
+        photon_std::thread(
+                [&]
+                {
+                    LOG_INFO("************ Test server started *************************");
+                    // LOG_INFO("*********** Test server accepted %v *********************", test_steam->getpeername());
+                    {
+                        photon_std::lock_guard lock(mu);
+                        server_stream = server_->accept();  // Blocking call, but in a separate thread
+                        connection_established = true;
+                    }
+                    LOG_INFO("************ Server got a connection *************************");
+                    cv.notify_one();
+                })
+                .detach();
+        // Wait for connection to be established
+        LOG_INFO("************ Waiting for client *************************");
+        {
+            photon_std::unique_lock lock(mu);
+            cv.wait(lock, [this] { return connection_established; });
+        }
+        // auto timeout = std::chrono::duration<std::chrono::seconds>(10);
+        // while (!connection_established)
+        // {
+        //     cv.wait(lock, timeout);
+        // }
+
+        // Create client socket and connect to the server
+        auto client_socket = photon::net::new_tcp_socket_client();
+        client_stream = client_socket->connect(server_addr);  // Blocking call
+        if (server_stream == nullptr)
+        {
+            FAIL() << "Server connection failed";
+        }
+
+        std::unique_ptr<photon::net::ISocketStream> stream_ptr(server_stream);
 
         // Create a new handler instance for each test
         handler_ = new Handler(std::move(stream_ptr), 1024);
@@ -48,8 +90,9 @@ protected:
     void TearDown() override
     {
         // Code here will be called immediately after each test (right before the destructor).
-        delete server_;
-        delete handler_;
+        if (client_stream) client_stream->close();
+        if (server_stream) server_stream->close();
+        if (server_) server_->terminate();
     }
 };
 

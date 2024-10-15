@@ -53,11 +53,21 @@ namespace redis
          * @return return the same output as send. The number of bytes written if success, a negative number if not.
          */
         ssize_t write_to_stream(const char* data, const size_t size) const { return stream_->send(data, size); }
-        char* buffer_data() { return buffer_.data(); }
+        /**
+         * data is used to get a non-mutable access to the data managed by the buffer.
+         *
+         * @return a pointer to the first byte of the underlined buffer.
+         */
+        [[nodiscard]] const char* data() const { return buffer_.data(); }
+        /**
+         * data_mut is used to get mutable access to the data managed by the buffer.
+         *
+         * @return a pointer to the first byte of the underlined buffer.
+         */
+        [[nodiscard]] char* data_mut() { return buffer_.data(); }
         [[nodiscard]] size_t buffer_size() const { return buffer_.size(); }
 
         std::expected<Frame, DecodeError> read_simple_frame();
-        // void append_data(const seastar::temporary_buffer<char>&& data);
 
     private:
         std::expected<std::string, DecodeError> read_simple_string_();

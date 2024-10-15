@@ -47,8 +47,11 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 set(FRAME_HANDLER_HEADERS include/framer/handler.h include/framer/frame.h include/framer/frame_id.h)
 set(FRAME_HANDLER_SOURCES src/framer/handler.cpp src/framer/frame.cpp src/framer/frame_id.cpp)
 add_library(framer_lib ${FRAME_HANDLER_SOURCES} ${FRAME_HANDLER_HEADERS})
-target_link_libraries(framer_lib PRIVATE Boost::headers)
 target_link_libraries(framer_lib PRIVATE photon_static)
+
+# in memory stream for testing
+add_library(memory_stream_lib include/memory_stream/mstream.h src/memory_stream/mstream.cpp)
+target_link_libraries(memory_stream_lib PRIVATE photon_static)
 
 # server
 set(SERVER_HEADERS include/server.hh include/connection.hh include/parser.hh include/commands.hh include/strings.hh)
@@ -69,6 +72,10 @@ enable_testing()
 add_executable(protocol_test tests/protocol_test.cc)
 target_link_libraries(protocol_test GTest::gtest_main server_lib resp3_lib)
 add_test(NAME protocol_test COMMAND protocol_test)
+
+add_executable(memory_stream_test tests/memory_stream/mstream_test.cpp)
+target_link_libraries(memory_stream_test GTest::gtest_main memory_stream_lib photon_static)
+add_test(NAME memory_stream_test COMMAND memory_stream_test)
 
 add_executable(frame_test tests/frame_test.cc)
 target_link_libraries(frame_test GTest::gtest_main resp3_lib)

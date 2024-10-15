@@ -16,8 +16,9 @@ namespace redis
     //@TODO add an opentelemetry span
 
     Handler::Handler(std::unique_ptr<photon::net::ISocketStream>&& stream, const size_t chunk_size) :
-        chunck_size_(chunk_size), buffer_(chunck_size_), stream_(std::move(stream))
+        chunck_size_(chunk_size), stream_(std::move(stream))
     {
+        buffer_.reserve(chunck_size_);
     }
 
     //@TODO: maybe just return the number of bytes read and let the caller unpack the error
@@ -29,7 +30,7 @@ namespace redis
             this->buffer_.reserve(this->chunck_size_ + buf_current_capacity);
         }
 
-        return this->stream_->recv(this->buffer_data(), this->chunck_size_);
+        return this->stream_->recv(this->data_mut(), this->chunck_size_);
         // if (num_read < 0)
         // {
         //     LOG_DEBUG("fatal network error occurred");
