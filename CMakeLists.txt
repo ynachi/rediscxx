@@ -50,14 +50,13 @@ add_library(framer_lib ${FRAME_HANDLER_SOURCES} ${FRAME_HANDLER_HEADERS})
 target_link_libraries(framer_lib PRIVATE photon_static)
 
 # in memory stream for testing
-add_library(memory_stream_lib include/memory_stream/mstream.h src/memory_stream/mstream.cpp)
+add_library(memory_stream_lib include/memory_stream/mstream.h)
 target_link_libraries(memory_stream_lib PRIVATE photon_static)
 
 # server
 set(SERVER_HEADERS include/server.hh include/connection.hh include/parser.hh include/commands.hh include/strings.hh)
 set(SERVER_SOURCES src/server.cc src/connection.cc src/parser.cc src/commands.cc src/strings.cc)
 add_library(server_lib ${SERVER_SOURCES} ${SERVER_HEADERS})
-
 
 add_executable(redis main.cpp)
 target_link_libraries(redis PRIVATE server_lib resp3_lib)
@@ -82,7 +81,7 @@ target_link_libraries(frame_test GTest::gtest_main resp3_lib)
 add_test(NAME frame_test COMMAND frame_test)
 
 add_executable(framer_test tests/framer/parser_test.cpp)
-target_link_libraries(framer_test GTest::gtest_main framer_lib photon_static)
+target_link_libraries(framer_test GTest::gtest_main framer_lib memory_stream_lib photon_static)
 add_test(NAME framer_test COMMAND framer_test)
 
 include(GNUInstallDirs)

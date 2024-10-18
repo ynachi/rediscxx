@@ -15,8 +15,8 @@ namespace redis
     //@TODO add a seastar logger
     //@TODO add an opentelemetry span
 
-    Handler::Handler(std::unique_ptr<photon::net::ISocketStream>&& stream, const size_t chunk_size) :
-        chunck_size_(chunk_size), stream_(std::move(stream))
+    Handler::Handler(photon::net::ISocketStream* stream, const size_t chunk_size) :
+        chunck_size_(chunk_size), stream_(stream)
     {
         buffer_.reserve(chunck_size_);
     }
@@ -29,20 +29,19 @@ namespace redis
         {
             this->buffer_.reserve(this->chunck_size_ + buf_current_capacity);
         }
-
-        return this->stream_->recv(this->data_mut(), this->chunck_size_);
-        // if (num_read < 0)
-        // {
-        //     LOG_DEBUG("fatal network error occurred");
-        //     return std::unexpected(DecodeError::FatalNetworkError);
-        // }
-        // if (num_read == 0)
-        // {
-        //     LOG_DEBUG("client orderly closed connection");
-        //     return std::unexpected(DecodeError::Eof);
-        // }
-        // LOG_DEBUG("read ", num_read, " number of bytes from the network");
-        // return {};
+        auto num_read = this->stream_->recv(this->buffer_.data(), this->chunck_size_);
+        if (num_read < 0)
+        {
+            LOG_DEBUG("fatal network error occurred");
+            // return std::unexpected(DecodeError::FatalNetworkError);
+        }
+        if (num_read == 0)
+        {
+            LOG_DEBUG("client orderly closed connection");
+            // return std::unexpected(DecodeError::Eof);
+        }
+        LOG_DEBUG("read ", num_read, " number of bytes from the network");
+        return 0;
     }
 
 
