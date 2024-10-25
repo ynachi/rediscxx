@@ -5,9 +5,6 @@
 #ifndef SERVER_HH
 #define SERVER_HH
 
-#include <boost/asio.hpp>
-#include <connection.hh>
-#include <iostream>
 #include <seastar/core/future.hh>
 #include <seastar/util/log.hh>
 #include <utility>

@@ -51,14 +51,15 @@ namespace redis
 
     seastar::future<> Server::process_connection(Handler&& handler)
     {
+        auto logger = handler.get_logger();
         while (true)
         {
             if (handler.eof())
             {
-                self->_logger->debug("connection was closed by the user");
+                logger->debug("connection was closed by the user");
                 break;
             }
-            auto tmp_read_buf = co_await self->_input_stream.read();
+            auto tmp_read_buf = co_await handler->_input_stream.read();
             if (tmp_read_buf.empty())
             {
                 self->_logger->debug("connection was closed by the user");

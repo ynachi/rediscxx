@@ -50,7 +50,11 @@ namespace redis
             buffer_.insert(buffer_.end(), data.begin(), data.end());
         }
 
+        seastar::future<std::expected<void, DecodeError>> read_more_data();
+
         bool eof() const { return input_stream_.eof(); }
+
+        seastar::lw_shared_ptr<seastar::logger> get_logger() const { return logger_; }
         /**
          * write_to_stream writes some data to the underlined stream of the handler.
          * It is similar to calling the send method on the Photonlib socket stream.
