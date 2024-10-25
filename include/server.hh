@@ -8,39 +8,33 @@
 #include <boost/asio.hpp>
 #include <connection.hh>
 #include <iostream>
+#include <seastar/core/future.hh>
+#include <seastar/util/log.hh>
+#include <utility>
+
+#include "framer/handler.h"
 
 namespace redis
 {
-    using boost::asio::awaitable;
-    using boost::asio::detached;
-    using boost::asio::ip::tcp;
 
-    class Server : public std::enable_shared_from_this<Server>
+    struct ServerConfig
     {
-        struct Private
-        {
-            explicit Private() = default;
-        };
+        uint16_t port = 6379;
+        std::string address = "127.0.0.1";
+        bool reuse_address = true;
+        size_t read_buffer_size = 1024;
+    };
 
+    class Server
+    {
     public:
-        std::shared_ptr<Server> get_ptr() { return shared_from_this(); }
+        // These two methods are useful for the server class to be used as a sharded service
+        seastar::future<> stop();
 
-        Server(Private, boost::asio::io_context &io_context, const tcp::endpoint &endpoint, bool reuse_addr,
-               size_t num_threads);
-
-        static std::shared_ptr<Server> create(boost::asio::io_context &io_context, const tcp::endpoint &endpoint,
-                                              bool reuse_addr, size_t num_threads)
-        {
-            return std::make_shared<Server>(Private(), io_context, endpoint, reuse_addr, num_threads);
-        }
-
-        ~Server()
-        {
-            std::cout << "Server destructor called. Cleaning up resources." << std::endl;
-            // Explicit cleanup if needed (for example, stopping io_context)
-            acceptor_.close();
-            io_context_.stop();
-        }
+        explicit Server(ServerConfig &&config) : config_(std::move(config)) {}
+        // listen to the port and start accepting connections
+        seastar::future<> listen();
+        seastar::future<> accept_loop(seastar::server_socket &&listener);
 
         Server(const Server &) = delete;
 
@@ -50,17 +44,12 @@ namespace redis
 
         Server &operator=(Server &&) noexcept = delete;
 
-        awaitable<void> listen();
-
-        void start();
-
-        static awaitable<void> start_session(std::shared_ptr<Connection> conn);
+        static seastar::future<> process_connection(Handler &&handler);
 
     private:
-        boost::asio::io_context &io_context_;
-        tcp::acceptor acceptor_;
         size_t thread_number_ = 10;
-        boost::asio::signal_set signals_;
+        ServerConfig config_;
+        seastar::lw_shared_ptr<seastar::logger> logger_;
     };
 }  // namespace redis
 

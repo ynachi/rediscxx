@@ -6,7 +6,9 @@
 #define HANDLER_H
 
 #include <expected>
-#include <photon/net/socket.h>
+#include <seastar/core/reactor.hh>
+#include <seastar/net/api.hh>
+#include <seastar/util/log.hh>
 #include <vector>
 
 #include "frame.h"
@@ -37,14 +39,18 @@ namespace redis
         Handler(Handler&&) = delete;
         Handler& operator=(Handler&&) = delete;
 
-        Handler(photon::net::ISocketStream* stream, size_t chunk_size);
-        ~Handler() { delete stream_; }
-        /**
-         * read_more_from_stream reads some data from the network stream. It is typically called when there is not
-         * enough data to decode a full frame.
-         * @return an integer representing the number of bytes read or -1 if an error occurred.
-         */
-        ssize_t read_more_from_stream();
+        Handler(seastar::connected_socket&& stream, const seastar::socket_address& addr,
+                seastar::lw_shared_ptr<seastar::logger> logger, size_t chunk_size);
+
+        // append_data appends a temporary buffer to the buffer managed by the handler.
+        // The buffer passed to this method would typically come from a stream of network in the case of this
+        // application.
+        void append_data(seastar::temporary_buffer<char>&& data) noexcept
+        {
+            buffer_.insert(buffer_.end(), data.begin(), data.end());
+        }
+
+        bool eof() const { return input_stream_.eof(); }
         /**
          * write_to_stream writes some data to the underlined stream of the handler.
          * It is similar to calling the send method on the Photonlib socket stream.
@@ -52,7 +58,7 @@ namespace redis
          * @param size
          * @return return the same output as send. The number of bytes written if success, a negative number if not.
          */
-        ssize_t write_to_stream(const char* data, const size_t size) const { return stream_->send(data, size); }
+        ssize_t write_to_stream(const char* data, const size_t size) const { connected_socket_->input() }
         /**
          * data is used to get a non-mutable access to the data managed by the buffer.
          *
@@ -76,9 +82,13 @@ namespace redis
 
         size_t chunck_size_ = 1024;
         std::vector<char> buffer_;
-        photon::net::ISocketStream* stream_;
+        seastar::connected_socket connected_socket_;
+        seastar::input_stream<char> input_stream_;
+        seastar::output_stream<char> output_stream_;
+        seastar::socket_address remote_address_;
+        seastar::lw_shared_ptr<seastar::logger> logger_;
         bool eof_reached_ = false;
-        size_t cursor_ = 0;
+        size_t read_cursor_ = 0;
     };
 }  // namespace redis
 

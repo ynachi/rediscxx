@@ -1,86 +1,88 @@
 //
 // Created by ynachi on 8/17/24.
 //
-#include <connection.hh>
-#include <iostream>
+#include <seastar/core/future-util.hh>
+#include <seastar/core/seastar.hh>
+#include <seastar/net/api.hh>
 #include <server.hh>
+
+#include "framer/handler.h"
 
 namespace redis
 {
-    using boost::asio::awaitable;
-    using boost::asio::co_spawn;
-    using boost::asio::detached;
-    using boost::asio::socket_base;
-    using boost::asio::use_awaitable;
-    using boost::asio::ip::tcp;
-
-    Server::Server(Private, boost::asio::io_context& io_context, const tcp::endpoint& endpoint, const bool reuse_addr,
-                   const size_t num_threads) :
-        io_context_(io_context), acceptor_(io_context_, endpoint), thread_number_(num_threads),
-        signals_(io_context_, SIGINT, SIGTERM)
+    seastar::future<> Server::listen()
     {
-        acceptor_.set_option(socket_base::reuse_address(reuse_addr));
-
-        signals_.async_wait(
-                [this](boost::system::error_code const&, int)
-                {
-                    std::cout << "Server::Server: closing connection on signal" << std::endl;
-                    io_context_.stop();
-                });
+        seastar::listen_options listen_options;
+        listen_options.reuse_address = this->config_.reuse_address;
+        listen_options.lba = seastar::server_socket::load_balancing_algorithm::default_;
+        try
+        {
+            auto const listen_address = seastar::make_ipv4_address({this->config_.address, this->config_.port});
+            auto listener = seastar::listen(listen_address, listen_options);
+            this->logger_->debug("server instance created at {}:{}", this->config_.address, this->config_.port);
+            co_await accept_loop(std::move(listener));
+        }
+        catch (const std::exception& e)
+        {
+            logger_->error("failed to listen on: {}:{}, error: {}", this->config_.address, this->config_.port,
+                           e.what());
+            seastar::engine_exit();
+        }
     }
 
-
-    awaitable<void> Server::listen()
+    seastar::future<> Server::accept_loop(seastar::server_socket&& listener)
     {
-        while (!io_context_.stopped())
+        while (true)
         {
-            try
-            {
-                auto socket = co_await this->acceptor_.async_accept(use_awaitable);
+            auto accept_result = co_await listener.accept();
+            this->logger_->debug("server accepted a new connection from {}", accept_result.remote_address);
 
-                auto const conn = Connection::create(std::move(socket));
+            auto frame_handler =
+                    std::make_unique<Handler>(std::move(accept_result.connection), accept_result.remote_address,
+                                              this->logger_, this->config_.read_buffer_size);
 
-                co_spawn(io_context_, Server::start_session(conn), detached);
-            }
-            catch (std::exception& e)
-            {
-                std::cerr << "Server::Server: server listening error: " << e.what() << std::endl;
-            }
+            // Launch process_connection asynchronously
+            (void) seastar::futurize_invoke([frame_handler = std::move(frame_handler)]() mutable -> seastar::future<>
+                                            { return process_connection(std::move(*frame_handler)); });
+
+            co_await seastar::maybe_yield();
         }
+    }
+
+    seastar::future<> Server::process_connection(Handler&& handler)
+    {
+        while (true)
+        {
+            if (handler.eof())
+            {
+                self->_logger->debug("connection was closed by the user");
+                break;
+            }
+            auto tmp_read_buf = co_await self->_input_stream.read();
+            if (tmp_read_buf.empty())
+            {
+                self->_logger->debug("connection was closed by the user");
+                break;
+            }
+            this->_buffer.add_upstream_data(std::move(tmp_read_buf));
+            auto data = this->_buffer.get_simple_string();
+            std::cout << data.value() << "\n";
+            if (data.error() == FrameDecodeError::Incomplete)
+            {
+                continue;
+            }
+            if (!data.has_value())
+            {
+                self->_logger->debug("error decoding frame");
+                continue;
+            }
+            const auto& ans = data.value();
+            std::cout << data.value() << "\n";
+            co_await self->_output_stream.write(data.value());
+            co_await self->_output_stream.flush();
+        }
+        co_await self->_output_stream.close();
         co_return;
     }
 
-    void Server::start()
-    {
-        // let's start by creating a shared reference of the server
-        auto self = this->get_ptr();
-
-        // Start listening in a coroutine
-        co_spawn(io_context_, [self]() -> awaitable<void> { co_await self->listen(); }, detached);
-
-        const size_t system_core_counts = std::thread::hardware_concurrency();
-        const size_t num_of_threads =
-                this->thread_number_ > system_core_counts ? this->thread_number_ : system_core_counts;
-
-        // Create and run io threads
-        std::vector<std::thread> threads;
-        for (std::size_t i = 0; i < num_of_threads; ++i)
-        {
-            threads.emplace_back([self]() { self->io_context_.run(); });
-        }
-
-        // Wait for all threads to complete
-        for (auto& thread: threads)
-        {
-            if (thread.joinable())
-            {
-                thread.join();
-            }
-        }
-    }
-
-    awaitable<void> Server::start_session(std::shared_ptr<Connection> conn)  // NOLINT
-    {
-        co_await conn->process_frames();
-    }
 }  // namespace redis
