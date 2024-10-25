@@ -7,6 +7,7 @@
 #include <server.hh>
 
 #include "framer/handler.h"
+#include "parser.hh"
 
 namespace redis
 {
@@ -59,19 +60,23 @@ namespace redis
                 logger->debug("connection was closed by the user");
                 break;
             }
-            auto tmp_read_buf = co_await handler->_input_stream.read();
-            if (tmp_read_buf.empty())
+
+            const auto result = co_await handler.read_more_data();
+            if (!result.has_value() && result.error() == Handler::DecodeError::Eof)
             {
-                self->_logger->debug("connection was closed by the user");
-                break;
+                logger->debug("connection was closed by the user");
+                co_return;
             }
-            this->_buffer.add_upstream_data(std::move(tmp_read_buf));
-            auto data = this->_buffer.get_simple_string();
-            std::cout << data.value() << "\n";
-            if (data.error() == FrameDecodeError::Incomplete)
+
+            auto data = handler.read_simple_frame();
+            if (!data.has_value())
             {
-                continue;
+                if (data.error() == Handler::DecodeError::Incomplete)
+                {
+                    logger->debug("cannot decode a full frame from data, reading more");
+                }
             }
+
             if (!data.has_value())
             {
                 self->_logger->debug("error decoding frame");

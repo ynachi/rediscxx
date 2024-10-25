@@ -31,6 +31,8 @@ namespace redis
         {
             co_return std::unexpected(DecodeError::Eof);
         }
+        this->append_data(std::move(tmp_buffer));
+        co_return std::expected<void, DecodeError>{};
     }
 
 
