@@ -1,6 +1,7 @@
 //
 // Created by ynachi on 8/17/24.
 //
+
 #include <seastar/core/future-util.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/net/api.hh>
@@ -61,11 +62,10 @@ namespace redis
                 break;
             }
 
-            const auto result = co_await handler.read_more_data();
-            if (!result.has_value() && result.error() == Handler::DecodeError::Eof)
+            if (const auto size = co_await handler.read_more_data(); size == 0)
             {
                 logger->debug("connection was closed by the user");
-                co_return;
+                break;
             }
 
             auto data = handler.read_simple_frame();
@@ -75,19 +75,17 @@ namespace redis
                 {
                     logger->debug("cannot decode a full frame from data, reading more");
                 }
-            }
-
-            if (!data.has_value())
-            {
-                self->_logger->debug("error decoding frame");
+                else
+                {
+                    logger->debug("error decoding frame, invalid frame data");
+                }
                 continue;
             }
+
             const auto& ans = data.value();
-            std::cout << data.value() << "\n";
-            co_await self->_output_stream.write(data.value());
-            co_await self->_output_stream.flush();
+            co_await handler.write_frame(ans);
         }
-        co_await self->_output_stream.close();
+        co_await handler.close();
         co_return;
     }
 

@@ -24,17 +24,20 @@ namespace redis
         logger->debug("new connection from {}", addr);
     }
 
-    seastar::future<std::expected<void, Handler::DecodeError>> Handler::read_more_data()
+    seastar::future<size_t> Handler::read_more_data()
     {
         auto tmp_buffer = co_await this->input_stream_.read();
-        if (tmp_buffer.empty())
-        {
-            co_return std::unexpected(DecodeError::Eof);
-        }
+        auto size = tmp_buffer.size();
         this->append_data(std::move(tmp_buffer));
-        co_return std::expected<void, DecodeError>{};
+        co_return size;
     }
 
+    seastar::future<> Handler::write_frame(const Frame& frame)
+    {
+        auto frame_data = frame.to_string();
+        co_await this->output_stream_.write(frame_data);
+        co_await this->output_stream_.flush();
+    }
 
     std::expected<std::string, Handler::DecodeError> Handler::read_simple_string_()
     {

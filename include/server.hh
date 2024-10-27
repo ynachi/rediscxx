@@ -26,7 +26,11 @@ namespace redis
     {
     public:
         // These two methods are useful for the server class to be used as a sharded service
-        seastar::future<> stop();
+        seastar::future<> stop()
+        {
+            logger_->debug("stopping the server");
+            return seastar::make_ready_future<>();
+        }
 
         explicit Server(ServerConfig &&config) : config_(std::move(config)) {}
         // listen to the port and start accepting connections

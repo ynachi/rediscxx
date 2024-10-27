@@ -50,19 +50,19 @@ namespace redis
             buffer_.insert(buffer_.end(), data.begin(), data.end());
         }
 
-        seastar::future<std::expected<void, DecodeError>> read_more_data();
+        seastar::future<size_t> read_more_data();
+        seastar::future<> write_frame(const Frame& frame);
+        seastar::future<> close() noexcept
+        {
+            co_await input_stream_.close();
+            co_await output_stream_.close();
+            co_return;
+        }
 
         bool eof() const { return input_stream_.eof(); }
 
         seastar::lw_shared_ptr<seastar::logger> get_logger() const { return logger_; }
-        /**
-         * write_to_stream writes some data to the underlined stream of the handler.
-         * It is similar to calling the send method on the Photonlib socket stream.
-         * @param data
-         * @param size
-         * @return return the same output as send. The number of bytes written if success, a negative number if not.
-         */
-        ssize_t write_to_stream(const char* data, const size_t size) const { connected_socket_->input() }
+
         /**
          * data is used to get a non-mutable access to the data managed by the buffer.
          *
