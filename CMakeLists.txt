@@ -30,12 +30,6 @@ include(cmake/FindPhoton.cmake)
 # Gtest
 include(cmake/FindGtest.cmake)
 
-# seastar
-find_package(Seastar REQUIRED)
-
-# Boost
-find_package(Boost REQUIRED)
-
 # project include dirs
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
@@ -54,12 +48,13 @@ add_library(memory_stream_lib include/memory_stream/mstream.h)
 target_link_libraries(memory_stream_lib PRIVATE photon_static)
 
 # server
-set(SERVER_HEADERS include/server.hh include/connection.hh include/parser.hh include/commands.hh include/strings.hh)
-set(SERVER_SOURCES src/server.cc src/connection.cc src/parser.cc src/commands.cc src/strings.cc)
+set(SERVER_HEADERS include/server.hh include/strings.hh)
+set(SERVER_SOURCES src/server.cc src/strings.cc)
 add_library(server_lib ${SERVER_SOURCES} ${SERVER_HEADERS})
+target_link_libraries(server_lib PRIVATE photon_static)
 
 add_executable(redis main.cpp)
-target_link_libraries(redis PRIVATE server_lib resp3_lib)
+target_link_libraries(redis PRIVATE server_lib photon_static)
 
 add_executable(poton src/poton.cpp)
 target_link_libraries(poton PRIVATE photon_static)
@@ -76,13 +71,9 @@ add_executable(memory_stream_test tests/memory_stream/mstream_test.cpp)
 target_link_libraries(memory_stream_test GTest::gtest_main memory_stream_lib photon_static)
 add_test(NAME memory_stream_test COMMAND memory_stream_test)
 
-add_executable(frame_test tests/frame_test.cc)
-target_link_libraries(frame_test GTest::gtest_main resp3_lib)
-add_test(NAME frame_test COMMAND frame_test)
-
-add_executable(framer_test tests/framer/parser_test.cpp)
-target_link_libraries(framer_test GTest::gtest_main framer_lib memory_stream_lib photon_static)
-add_test(NAME framer_test COMMAND framer_test)
+add_executable(parser_test tests/framer/parser_test.cpp)
+target_link_libraries(parser_test GTest::gtest_main framer_lib memory_stream_lib photon_static)
+add_test(NAME parser_test COMMAND parser_test)
 
 include(GNUInstallDirs)
 install(TARGETS redis

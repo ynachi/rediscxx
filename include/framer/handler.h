@@ -74,11 +74,13 @@ namespace redis
         std::expected<int64_t, DecodeError> read_integer_();
         std::expected<std::string, DecodeError> read_bulk_string_();
 
-        size_t chunck_size_ = 1024;
+        // Choose chunk size wisely. Initially, a buffer of 2 * chunk_size will be allocated for reading
+        // on the network stream.
+        size_t chunk_size_ = 1024;
         std::vector<char> buffer_;
         photon::net::ISocketStream* stream_;
         bool eof_reached_ = false;
-        size_t cursor_ = 0;
+        size_t cursor_pos_ = 0;
     };
 }  // namespace redis
 

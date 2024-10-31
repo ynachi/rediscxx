@@ -1,86 +1,85 @@
 //
 // Created by ynachi on 8/17/24.
 //
-#include <connection.hh>
 #include <iostream>
+#include <photon/common/alog.h>
 #include <server.hh>
 
 namespace redis
 {
-    using boost::asio::awaitable;
-    using boost::asio::co_spawn;
-    using boost::asio::detached;
-    using boost::asio::socket_base;
-    using boost::asio::use_awaitable;
-    using boost::asio::ip::tcp;
 
-    Server::Server(Private, boost::asio::io_context& io_context, const tcp::endpoint& endpoint, const bool reuse_addr,
-                   const size_t num_threads) :
-        io_context_(io_context), acceptor_(io_context_, endpoint), thread_number_(num_threads),
-        signals_(io_context_, SIGINT, SIGTERM)
+    Server::Server(const ServerConfig& config) : server_config_(config)
     {
-        acceptor_.set_option(socket_base::reuse_address(reuse_addr));
-
-        signals_.async_wait(
-                [this](boost::system::error_code const&, int)
-                {
-                    std::cout << "Server::Server: closing connection on signal" << std::endl;
-                    io_context_.stop();
-                });
-    }
-
-
-    awaitable<void> Server::listen()
-    {
-        while (!io_context_.stopped())
+        if (const auto rc = photon::init(config.event_engine_, config.io_engine_); rc != 0)
         {
-            try
-            {
-                auto socket = co_await this->acceptor_.async_accept(use_awaitable);
-
-                auto const conn = Connection::create(std::move(socket));
-
-                co_spawn(io_context_, Server::start_session(conn), detached);
-            }
-            catch (std::exception& e)
-            {
-                std::cerr << "Server::Server: server listening error: " << e.what() << std::endl;
-            }
-        }
-        co_return;
-    }
-
-    void Server::start()
-    {
-        // let's start by creating a shared reference of the server
-        auto self = this->get_ptr();
-
-        // Start listening in a coroutine
-        co_spawn(io_context_, [self]() -> awaitable<void> { co_await self->listen(); }, detached);
-
-        const size_t system_core_counts = std::thread::hardware_concurrency();
-        const size_t num_of_threads =
-                this->thread_number_ > system_core_counts ? this->thread_number_ : system_core_counts;
-
-        // Create and run io threads
-        std::vector<std::thread> threads;
-        for (std::size_t i = 0; i < num_of_threads; ++i)
+            LOG_FATAL("photon::init failed");
+        };
+        if (const auto rc =
+                    photon_std::work_pool_init(config.event_thread_count_, config.event_engine_, config.io_engine_);
+            rc != 0)
         {
-            threads.emplace_back([self]() { self->io_context_.run(); });
+            LOG_FATAL("photon::init thread pool init failed");
         }
 
-        // Wait for all threads to complete
-        for (auto& thread: threads)
+        socket_server_ = photon::net::new_tcp_socket_server();
+        if (socket_server_ == nullptr)
         {
-            if (thread.joinable())
-            {
-                thread.join();
-            }
+            LOG_FATAL("failed to create a tcp socket");
         }
     }
 
-    awaitable<void> Server::start_session(std::shared_ptr<Connection> conn)  // NOLINT
+
+    void Server::listen_()
     {
-        co_await conn->process_frames();
+        if (const auto rc = socket_server_->bind(9527, this->server_config_.host_); rc != 0)
+        {
+            LOG_FATAL("failed to bind tcp socket");
+        }
+
+        if (socket_server_->listen() < 0)
+        {
+            LOG_FATAL("failed to listen tcp socket");
+        }
     }
+
+    void Server::start_accept_loop()
+    {
+        this->listen_();
+        photon::WorkPool wp(std::thread::hardware_concurrency(), photon::INIT_EVENT_IOURING, photon::INIT_IO_NONE,
+                            128 * 1024);
+        while (true)
+        {
+            std::unique_ptr<photon::net::ISocketStream> stream(socket_server_->accept());
+            if (stream == nullptr)
+            {
+                LOG_FATAL("failed to accept tcp socket");
+            }
+            wp.async_call(new auto([stream = std::move(stream)]() mutable { handle_connection(std::move(stream)); }));
+            photon::thread_yield();
+        }
+    }
+
+    void Server::handle_connection(std::unique_ptr<photon::net::ISocketStream> conn)
+    {
+        std::vector<char> buf;  // Predefined buffer size
+        buf.reserve(1024);
+        while (true)
+        {
+            ssize_t ret = conn->recv(buf.data(), 1024);
+            if (ret <= 0)
+            {
+                LOG_FATAL("failed to bind tcp socket");
+                // LOG_ERRNO_RETURN(0, , "failed to read socket");
+            }
+            // Echo the received message back to the client
+            for (size_t i = 0; i < ret; ++i)
+            {
+                buf[i] = std::toupper(buf[i]);
+            }
+            conn->send(buf.data(), ret);
+            LOG_INFO("Received and sent back ", ret, " bytes.");
+            photon::thread_yield();
+        }
+    }
+
 }  // namespace redis
