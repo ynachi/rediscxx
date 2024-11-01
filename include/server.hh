@@ -18,6 +18,7 @@ namespace redis
         size_t event_engine_ = photon::INIT_EVENT_DEFAULT;
         size_t io_engine_ = photon::INIT_IO_NONE;
         photon::net::IPAddr host_{"127.0.0.1"};
+        size_t network_read_chunk_{1024};
         uint16_t port_ = 6379;
     };
 

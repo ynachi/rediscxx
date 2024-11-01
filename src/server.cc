@@ -5,6 +5,8 @@
 #include <photon/common/alog.h>
 #include <server.hh>
 
+#include "framer/handler.h"
+
 namespace redis
 {
 
@@ -31,14 +33,14 @@ namespace redis
 
     void Server::listen_()
     {
-        if (const auto rc = socket_server_->bind(9527, this->server_config_.host_); rc != 0)
+        if (const auto rc = socket_server_->bind(this->server_config_.port_, this->server_config_.host_); rc != 0)
         {
-            LOG_FATAL("failed to bind tcp socket");
+            LOG_ERRNO_RETURN(0, , "failed to bind tcp socket");
         }
 
         if (socket_server_->listen() < 0)
         {
-            LOG_FATAL("failed to listen tcp socket");
+            LOG_ERRNO_RETURN(0, , "failed to listen on tcp socket");
         }
     }
 
@@ -52,33 +54,32 @@ namespace redis
             std::unique_ptr<photon::net::ISocketStream> stream(socket_server_->accept());
             if (stream == nullptr)
             {
-                LOG_FATAL("failed to accept tcp socket");
+                LOG_ERRNO_RETURN(0, , "failed to accept tcp socket");
             }
             wp.async_call(new auto([stream = std::move(stream)]() mutable { handle_connection(std::move(stream)); }));
-            photon::thread_yield();
+            // photon::thread_yield();
         }
     }
 
     void Server::handle_connection(std::unique_ptr<photon::net::ISocketStream> conn)
     {
-        std::vector<char> buf;  // Predefined buffer size
-        buf.reserve(1024);
+        auto handler = Handler(std::move(conn), 2048);
         while (true)
         {
-            ssize_t ret = conn->recv(buf.data(), 1024);
-            if (ret <= 0)
+            auto num_read = handler.read_more_from_stream();
+            if (num_read < 0)
             {
-                LOG_FATAL("failed to bind tcp socket");
-                // LOG_ERRNO_RETURN(0, , "failed to read socket");
+                LOG_ERRNO_RETURN(0, , "failed to read from tcp socket");
+            }
+            auto ans = handler.read_simple_frame();
+            if (!ans.has_value())
+            {
+                LOG_ERRNO_RETURN(0, , "failed to decode frame");
             }
             // Echo the received message back to the client
-            for (size_t i = 0; i < ret; ++i)
-            {
-                buf[i] = std::toupper(buf[i]);
-            }
-            conn->send(buf.data(), ret);
-            LOG_INFO("Received and sent back ", ret, " bytes.");
-            photon::thread_yield();
+            auto frame = ans.value().to_string();
+            conn->send(frame.data(), frame.size());
+            LOG_INFO("Received and sent back ", frame.size(), " bytes.");
         }
     }
 

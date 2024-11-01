@@ -12,8 +12,8 @@ namespace redis
     constexpr char CR = '\r';
     constexpr char LF = '\n';
 
-    Handler::Handler(photon::net::ISocketStream* stream, const size_t chunk_size) :
-        chunk_size_(chunk_size), stream_(stream)
+    Handler::Handler(std::unique_ptr<photon::net::ISocketStream> stream, const size_t chunk_size) :
+        chunk_size_(chunk_size), stream_(std::move(stream))
     {
         buffer_.reserve(chunk_size_ * 2);
     }
@@ -53,7 +53,7 @@ namespace redis
             const auto current_char = this->buffer_[i];
             if (current_char == CR)
             {
-                if (i + 1 < this->buffer_.size())
+                if (i + 1 >= this->buffer_.size())
                 {
                     // This is an incomplete frame, maybe. e.g: hello\r
                     return std::unexpected(DecodeError::Incomplete);
@@ -65,8 +65,8 @@ namespace redis
                     this->cursor_pos_ += i + 1;
                     return std::unexpected(DecodeError::Invalid);
                 }
-                auto result = std::string(this->buffer_.begin() + current_cursor,
-                                          this->buffer_.begin() + current_cursor + i + 1);
+                auto result =
+                        std::string(this->buffer_.begin() + current_cursor, this->buffer_.begin() + current_cursor + i);
                 this->cursor_pos_ += i + 2;
                 return result;
             }

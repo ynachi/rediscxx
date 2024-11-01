@@ -7,8 +7,11 @@ set(BUILD_SHARED_LIBS OFF) # We expect external libraries to be linked staticall
 project(redis LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 
-#add_compile_options(-fsanitize=address -g)
-#add_link_options(-fsanitize=address)
+# Apply AddressSanitizer options only in Debug mode
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_compile_options(-fsanitize=address -g)
+    add_link_options(-fsanitize=address)
+endif ()
 
 set(REDISCXX_BUILD_SUPPORT_DIR "${CMAKE_SOURCE_DIR}/build_support")
 
@@ -51,7 +54,7 @@ target_link_libraries(memory_stream_lib PRIVATE photon_static)
 set(SERVER_HEADERS include/server.hh include/strings.hh)
 set(SERVER_SOURCES src/server.cc src/strings.cc)
 add_library(server_lib ${SERVER_SOURCES} ${SERVER_HEADERS})
-target_link_libraries(server_lib PRIVATE photon_static)
+target_link_libraries(server_lib PRIVATE framer_lib photon_static)
 
 add_executable(redis main.cpp)
 target_link_libraries(redis PRIVATE server_lib photon_static)

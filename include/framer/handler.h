@@ -37,8 +37,7 @@ namespace redis
         Handler(Handler&&) = delete;
         Handler& operator=(Handler&&) = delete;
 
-        Handler(photon::net::ISocketStream* stream, size_t chunk_size);
-        ~Handler() { delete stream_; }
+        Handler(std::unique_ptr<photon::net::ISocketStream> stream, size_t chunk_size);
         /**
          * read_more_from_stream reads some data from the network stream. It is typically called when there is not
          * enough data to decode a full frame.
@@ -78,7 +77,7 @@ namespace redis
         // on the network stream.
         size_t chunk_size_ = 1024;
         std::vector<char> buffer_;
-        photon::net::ISocketStream* stream_;
+        std::unique_ptr<photon::net::ISocketStream> stream_;
         bool eof_reached_ = false;
         size_t cursor_pos_ = 0;
     };
