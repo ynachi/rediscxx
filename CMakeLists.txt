@@ -3,6 +3,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # For clang-tidy.
 set(BUILD_SHARED_LIBS OFF) # We expect external libraries to be linked statically.
 project(redis LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
+set(GTEST_GIT_TAG v1.15.2)
 
 set(REDISCXX_BUILD_SUPPORT_DIR "${CMAKE_SOURCE_DIR}/build_support")
 
