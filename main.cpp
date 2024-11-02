@@ -11,6 +11,6 @@ int main(const int argc, char **argv)
                        auto config = redis::ServerConfig();
                        auto server = redis::Server(std::move(config));
                        std::cout << "server started listening to connections\n";
-                       co_await server.listen();
+                       return  server.listen();
                    });
 }

@@ -5,6 +5,13 @@ project(redis LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 
 set(GTEST_GIT_TAG v1.15.2)
+
+# Apply AddressSanitizer options only in Debug mode
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_compile_options(-fsanitize=address -g)
+    add_link_options(-fsanitize=address)
+endif ()
+
 #cmake_policy (SET CMP0090 NEW)
 #foreach (policy CMP0127 CMP0135 CMP0167)
 #    if (POLICY ${policy})
@@ -33,7 +40,7 @@ endif ()
 include(cmake/FindGtest.cmake)
 
 # Google benchmark
-find_package(benchmark REQUIRED)
+#find_package(benchmark REQUIRED)
 # how to use: target_link_libraries(MyTarget benchmark::benchmark)
 
 # Boost
@@ -56,10 +63,10 @@ add_library(framer_lib ${FRAMER_SOURCES} ${FRAMER_HEADERS} )
 target_link_libraries(framer_lib PRIVATE Seastar::seastar)
 
 # server
-set(SERVER_HEADERS include/server.hh include/connection.hh include/parser.hh include/commands.hh include/strings.hh)
-set(SERVER_SOURCES src/server.cc src/connection.cc src/parser.cc src/commands.cc src/strings.cc)
+set(SERVER_HEADERS include/server.hh include/parser.hh include/strings.hh)
+set(SERVER_SOURCES src/server.cc src/parser.cc src/strings.cc)
 add_library(server_lib ${SERVER_SOURCES} ${SERVER_HEADERS})
-target_link_libraries(server_lib PRIVATE Boost::headers)
+target_link_libraries(server_lib PRIVATE Seastar::seastar)
 
 add_executable(redis main.cpp)
 target_link_libraries(redis PRIVATE server_lib resp3_lib)
