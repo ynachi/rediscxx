@@ -2,6 +2,15 @@ cmake_minimum_required(VERSION 3.28)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # For clang-tidy.
 set(BUILD_SHARED_LIBS OFF) # We expect external libraries to be linked statically.
 project(redis LANGUAGES CXX)
+
+# Specify the desired output directories
+set(BUILD_DIR "${CMAKE_SOURCE_DIR}/build")
+set(OUTPUT_DIR "${CMAKE_SOURCE_DIR}/output")
+
+# Create directories if they do not exist
+file(MAKE_DIRECTORY ${BUILD_DIR})
+file(MAKE_DIRECTORY ${OUTPUT_DIR})
+
 set(CMAKE_CXX_STANDARD 23)
 set(GTEST_GIT_TAG v1.15.2)
 
