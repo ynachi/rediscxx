@@ -8,6 +8,15 @@ namespace redis {
         this->_data.emplace_back(std::move(chunk));
     }
 
+     BufferManager::BufferManager(seastar::connected_socket &&fd) noexcept: fd_(std::move(fd)),
+        // @TODO param me
+        input_stream_(fd.input(seastar::connected_socket_input_stream_config(1024, 512, 8192))),
+        // @TODO param me
+        output_stream_(fd.output(8192))
+    {
+    }
+
+
 
     std::expected<std::string, FrameDecodeError> BufferManager::_read_simple_string() noexcept {
         if (this->_data.empty()) {
@@ -148,7 +157,7 @@ namespace redis {
     void BufferManager::pop_front() noexcept { this->_data.pop_front(); }
 
     std::expected<Frame, FrameDecodeError> BufferManager::get_simple_frame_variant(FrameID frame_id) noexcept {
-        if (!std::set<FrameID>{FrameID::SimpleString, FrameID::SimpleError, FrameID::BigNumber}.contains(frame_id)) {
+        if (!std::set{FrameID::SimpleString, FrameID::SimpleError, FrameID::BigNumber}.contains(frame_id)) {
             return std::unexpected(FrameDecodeError::WrongArgsType);
         }
         auto frame_data = this->get_simple_string();

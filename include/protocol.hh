@@ -3,7 +3,11 @@
 
 #include <deque>
 #include <expected>
+#include <seastar/core/iostream.hh>
 #include <seastar/core/temporary_buffer.hh>
+#include <seastar/net/socket_defs.hh>
+
+#include "connection.hh"
 #include "frame.hh"
 
 namespace redis {
@@ -26,6 +30,10 @@ namespace redis {
      */
     class BufferManager {
         std::deque<seastar::temporary_buffer<char>> _data;
+        seastar::connected_socket fd_;
+        seastar::input_stream<char> input_stream_;
+        seastar::output_stream<char> output_stream_;
+        seastar::socket_address remote_address_;
 
         /**
          * @brief _read_simple_string tries to read a simple string from the buffer pool.
@@ -48,6 +56,8 @@ namespace redis {
         BufferManager() noexcept = default;
         BufferManager(BufferManager &&other) noexcept = default;
         BufferManager &operator=(BufferManager &&other) noexcept = default;
+
+        BufferManager(seastar::connected_socket&& fd) noexcept;
 
         /**
          * @brief Adds a chunk of data to the BufferManager. The decoder is supposed to be filled
