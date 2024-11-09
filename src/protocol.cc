@@ -16,45 +16,44 @@ namespace redis {
         output_stream_(fd.output(8192)) {}
 
 
-    std::expected<std::string, FrameDecodeError> BufferManager::_read_simple_string() noexcept {
+    Result<std::string> BufferManager::read_simple_string_() {
         if (this->data_.empty()) {
-            return std::unexpected(FrameDecodeError::Empty);
+            return make_string_error(RedisError::empty_buffer);
         }
 
         std::string result;
         for (const auto &buf: this->data_) {
             for (int i = 0; i < buf.size(); ++i) {
-                auto c = buf[i];
-                switch (c) {
+                switch (const auto c = buf[i]) {
                     case '\r':
                         if (i == buf.size() - 1) {
-                            return std::unexpected(FrameDecodeError::Incomplete);
+                            return make_string_error(RedisError::incomplete_frame);
                         }
                         if (buf[i + 1] != '\n') {
                             // trim the faulty data
                             this->advance(result.size() + 1);
-                            return std::unexpected(FrameDecodeError::Invalid);
+                            return make_string_error(RedisError::invalid_frame);
                         }
-                        return result;
+                        return Result<std::string>{result};
                     case '\n':
                         this->advance(result.size() + 1);
-                        return std::unexpected(FrameDecodeError::Invalid);
+                        return make_string_error(RedisError::invalid_frame);
                     default:
                         result.push_back(c);
                 }
             }
         }
-        return std::unexpected(FrameDecodeError::Incomplete);
+        return make_string_error(RedisError::incomplete_frame);
     }
 
-    std::expected<std::string, FrameDecodeError> BufferManager::_read_bulk_string(size_t n) noexcept {
+    Result<std::string> BufferManager::read_bulk_string_(const size_t n) {
         if (this->data_.empty()) {
-            return std::unexpected(FrameDecodeError::Empty);
+            return make_string_error(RedisError::empty_buffer);
         }
 
         // Do we have enough data to decode the bulk frame ?
         if (this->get_total_size() < n + 2) {
-            return std::unexpected(FrameDecodeError::Incomplete);
+            return make_string_error(RedisError::incomplete_frame);
         }
 
         // Let's actually read the data we know is enough
@@ -70,34 +69,33 @@ namespace redis {
         }
 
         // At this point, we know the next buffer has enough data for the rest to decode
-        size_t bytes_num_left = n + 2 - str_read.size();
+        const size_t bytes_num_left = n + 2 - str_read.size();
         str_read.append(this->data_[buffer_index].get(), bytes_num_left);
-        auto maybe_crlf = str_read.substr(str_read.length() - 2, 2);
 
         // now check if it is ending with CRLF
-        if (maybe_crlf != "\r\n") {
+        if (const auto maybe_crlf = str_read.substr(str_read.length() - 2, 2); maybe_crlf != "\r\n") {
             // throw away the faulty bytes
             this->advance(n + 2);
-            return std::unexpected(FrameDecodeError::Invalid);
+            return make_string_error(RedisError::invalid_frame);
         }
 
         str_read.resize(str_read.size() - 2);
-        return str_read;
+        return Result<std::string>{str_read};
     }
 
-    std::expected<std::string, FrameDecodeError> BufferManager::get_simple_string() noexcept {
-        auto result = this->_read_simple_string();
-        if (!result.has_value()) {
-            return std::unexpected(result.error());
+    Result<std::string> BufferManager::get_simple_string() {
+        auto result = this->read_simple_string_();
+        if (result.is_error()) {
+            return result;
         }
-        this->advance(result->size() + 2);
+        this->advance(result.value().size() + 2);
         return result;
     }
 
-    std::expected<std::string, FrameDecodeError> BufferManager::get_bulk_string(size_t length) noexcept {
-        auto result = this->_read_bulk_string(length);
-        if (!result.has_value()) {
-            return std::unexpected(result.error());
+    Result<std::string> BufferManager::get_bulk_string(const size_t length) {
+        auto result = this->read_bulk_string_(length);
+        if (result.is_error()) {
+            return result;
         }
         this->advance(length + 2);
         return result;
@@ -111,14 +109,13 @@ namespace redis {
         return ans;
     }
 
-    void BufferManager::advance(size_t n) noexcept {
+    void BufferManager::advance(const size_t n) noexcept {
         size_t bytes_to_consume = n;
 
         while (bytes_to_consume > 0 && !this->data_.empty()) {
             auto &current_buf = this->data_.front();
-            size_t buf_size = current_buf.size();
 
-            if (buf_size <= bytes_to_consume) {
+            if (const size_t buf_size = current_buf.size(); buf_size <= bytes_to_consume) {
                 // We need to consume the entire buffer
                 bytes_to_consume -= buf_size;
                 this->data_.pop_front();
@@ -130,21 +127,21 @@ namespace redis {
         }
     }
 
-    std::expected<int64_t, FrameDecodeError> BufferManager::get_int() noexcept {
+    Result<int64_t> BufferManager::get_int() noexcept {
         auto str_result = this->get_simple_string();
-        if (!str_result.has_value()) {
-            return std::unexpected(str_result.error());
+        if (!str_result.is_error()) {
+            return make_int64_error(str_result.error());
         }
         try {
             int64_t result = std::stoll(str_result.value());
-            return result;
+            return Result<int64_t>{result};
         } catch (const std::exception &_) {
-            //@TODO log the error
-            return std::unexpected(FrameDecodeError::Atoi);
+            //@TODO log the exception
+            return make_int64_error(RedisError::atoi);
         }
     }
 
-    void BufferManager::trim_front(size_t n) {
+    void BufferManager::trim_front(const size_t n) {
         if (n < this->get_current_buffer_size()) {
             this->data_.front().trim_front(n);
         } else {
@@ -154,53 +151,53 @@ namespace redis {
 
     void BufferManager::pop_front() noexcept { this->data_.pop_front(); }
 
-    std::expected<Frame, FrameDecodeError> BufferManager::get_simple_frame_variant(FrameID frame_id) noexcept {
+    Result<Frame> BufferManager::get_simple_frame_variant(const FrameID frame_id) {
         if (!std::set{FrameID::SimpleString, FrameID::SimpleError, FrameID::BigNumber}.contains(frame_id)) {
-            return std::unexpected(FrameDecodeError::WrongArgsType);
+            return make_frame_error(RedisError::wrong_arg_types);
         }
         auto frame_data = this->get_simple_string();
-        if (!frame_data.has_value()) {
-            return std::unexpected(frame_data.error());
+        if (frame_data.is_error()) {
+            return make_frame_error(frame_data.error());
         }
         Frame frame = Frame::make_frame(frame_id);
         frame.data = std::move(frame_data.value());
-        return frame;
+        return Result<Frame>{frame};
     }
 
-    std::expected<Frame, FrameDecodeError> BufferManager::get_bulk_frame_variant(FrameID frame_id) noexcept {
-        if (!std::set<FrameID>{FrameID::BulkString, FrameID::BulkError}.contains(frame_id)) {
-            return std::unexpected(FrameDecodeError::WrongArgsType);
+    Result<Frame> BufferManager::get_bulk_frame_variant(const FrameID frame_id) {
+        if (!std::set{FrameID::BulkString, FrameID::BulkError}.contains(frame_id)) {
+            return make_frame_error(RedisError::wrong_arg_types);
         }
         auto size = this->get_int();
-        if (!size.has_value()) {
-            return std::unexpected(size.error());
+        if (size.is_error()) {
+            return make_frame_error(size.error());
         }
         auto frame_data = this->get_bulk_string(size.value());
-        if (!frame_data.has_value()) {
-            return std::unexpected(frame_data.error());
+        if (frame_data.is_error()) {
+            return make_frame_error(frame_data.error());
         }
         Frame frame = Frame::make_frame(frame_id);
         frame.data = std::move(frame_data.value());
-        return frame;
+        return Result<Frame>{frame};
     }
 
-    std::expected<Frame, FrameDecodeError> BufferManager::get_integer_frame() noexcept {
+    Result<Frame> BufferManager::get_integer_frame() {
         auto frame_data = this->get_int();
-        if (!frame_data.has_value()) {
-            return std::unexpected(frame_data.error());
+        if (frame_data.is_error()) {
+            return make_frame_error(frame_data.error());
         }
         Frame frame = Frame::make_frame(FrameID::Integer);
         frame.data = frame_data.value();
-        return frame;
+        return Result<Frame>{frame};
     }
 
-    std::expected<Frame, FrameDecodeError> BufferManager::get_boolean_frame() noexcept {
+    Result<Frame> BufferManager::get_boolean_frame() {
         auto frame_data = this->get_simple_string();
-        if (!frame_data.has_value()) {
-            return std::unexpected(frame_data.error());
+        if (frame_data.is_error()) {
+            return make_frame_error(frame_data.error());
         }
         if (frame_data.value() != "t" && frame_data.value() != "f") {
-            return std::unexpected(FrameDecodeError::Invalid);
+            return make_frame_error(RedisError::invalid_frame);
         }
         Frame frame = Frame::make_frame(FrameID::Boolean);
         if (frame_data.value() != "t") {
@@ -208,15 +205,14 @@ namespace redis {
         } else {
             frame.data = false;
         }
-        return frame;
+        return Result<Frame>{frame};
     }
 
-    std::expected<Frame, FrameDecodeError> BufferManager::get_null_frame() noexcept {
-        auto frame_data = this->get_simple_string();
-        if (!frame_data.has_value()) {
-            return std::unexpected(frame_data.error());
+    Result<Frame> BufferManager::get_null_frame() {
+        if (const auto frame_data = this->get_simple_string(); frame_data.is_error()) {
+            return make_frame_error(frame_data.error());
         }
-        return Frame::make_frame(FrameID::Null);
+        return Result<Frame>{Frame::make_frame(FrameID::Null)};
     }
 
     seastar::future<> BufferManager::process_frames() {
@@ -240,10 +236,10 @@ namespace redis {
             }
             self->add_upstream_data(std::move(tmp_read_buf));
             auto data = self->get_simple_string();
-            if (data.error() == FrameDecodeError::Incomplete) {
+            if (data.is_error() && data.error() == RedisError::incomplete_frame) {
                 continue;
             }
-            if (!data.has_value()) {
+            if (data.is_error()) {
                 std::cout << "error decoding frame"
                           << "\n";
                 continue;

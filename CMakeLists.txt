@@ -44,9 +44,11 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 # TARGETS
 # #####################################################################################################################
 
-# logger
-add_library(logger_lib src/logger.cc include/logger.hh)
-target_link_libraries(logger_lib PRIVATE Seastar::seastar)
+# base: logger, errors
+set(BASE_HEADERS include/logger.hh include/errors.hh)
+set(BASE_SOURCES src/logger.cc src/errors.cc)
+add_library(base_lib ${BASE_HEADERS} ${BASE_SOURCES})
+target_link_libraries(base_lib PRIVATE Seastar::seastar)
 
 # resp3
 set(RESP3_HEADERS include/frame_id.hh include/frame.hh)
@@ -57,7 +59,7 @@ add_library(resp3_lib ${RESP3_SOURCES} ${RESP3_HEADERS})
 set(SERVER_HEADERS include/server.hh include/protocol.hh)
 set(SERVER_SOURCES src/server.cc src/protocol.cc)
 add_library(server_lib ${SERVER_SOURCES} ${SERVER_HEADERS})
-target_link_libraries(server_lib PRIVATE Seastar::seastar logger_lib)
+target_link_libraries(server_lib PRIVATE Seastar::seastar base_lib)
 
 add_executable(redis main.cpp)
 target_link_libraries(redis PRIVATE Seastar::seastar server_lib resp3_lib)

@@ -1,5 +1,7 @@
 #include "protocol.hh"
 #include <gtest/gtest.h>
+#include <seastar/core/app-template.hh>
+#include <seastar/core/seastar.hh>
 
 using namespace redis;
 class BufferManagerTest : public ::testing::Test {
@@ -177,4 +179,12 @@ TEST_F(BufferManagerTest, GetBulkString_BulkValidCRLFAcrossBuffers) {
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), "ABC\r");
     EXPECT_EQ(decoder.get_buffer_number(), 1);
+}
+
+int main(int argc, char **argv) {
+    seastar::app_template app;
+    return app.run(argc, argv, [&argc, &argv] {
+        ::testing::InitGoogleTest(&argc, argv);
+        return seastar::make_ready_future<int>(RUN_ALL_TESTS());
+    });
 }

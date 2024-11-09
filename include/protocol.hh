@@ -8,6 +8,7 @@
 #include <seastar/net/api.hh>
 #include <seastar/net/socket_defs.hh>
 
+#include "errors.hh"
 #include "frame.hh"
 
 namespace redis {
@@ -25,7 +26,7 @@ namespace redis {
      *
      * The BufferManager class accumulates data chunks in a deque and processes them
      * to extract complete frames as defined by the Redis protocol. Each fully processed chunk should be removed
-     * from the queue. We maintains an internal cursor which denotes where we sit in the next chunk to process
+     * from the queue. We maintain an internal cursor which denotes where we sit in the next chunk to process
      * (which is actually queue.front()). In case of a faulty frame, the 'bad' data ois trimmed out.
      */
     class BufferManager : public seastar::enable_lw_shared_from_this<BufferManager> {
@@ -33,7 +34,7 @@ namespace redis {
             explicit Private() = default;
         };
         std::deque<seastar::temporary_buffer<char>> data_;
-        // make the connected socket the same lifecycle as our object. But we explicity don't need i here.
+        // make the connected socket the same lifecycle as our object. But we explicit don't need i here.
         seastar::connected_socket fd_;
         seastar::input_stream<char> input_stream_;
         seastar::output_stream<char> output_stream_;
@@ -47,9 +48,9 @@ namespace redis {
          * @return the string without advancing the internal cursor of the buffer. The caller should
          * make sure to consume the data read out if needed.
          */
-        std::expected<std::string, FrameDecodeError> _read_simple_string() noexcept;
+        Result<std::string> read_simple_string_();
 
-        std::expected<std::string, FrameDecodeError> _read_bulk_string(size_t n) noexcept;
+        Result<std::string> read_bulk_string_(size_t n);
 
     public:
         seastar::future<> process_frames();
@@ -96,7 +97,7 @@ namespace redis {
          *
          * @return a string or an error
          */
-        std::expected<std::string, FrameDecodeError> get_simple_string() noexcept;
+        Result<std::string> get_simple_string();
 
         /**
          * @brief get_bulk_string gets a string from the buffer given it length. The bulk string is also terminated
@@ -105,7 +106,7 @@ namespace redis {
          * @param length
          * @return
          */
-        std::expected<std::string, FrameDecodeError> get_bulk_string(size_t length) noexcept;
+        Result<std::string> get_bulk_string(size_t length);
 
 
         /**
@@ -148,14 +149,14 @@ namespace redis {
         // @TODO, make advance returns the number of bytes effectively advanced, in case n > number of available chars
         void advance(size_t n) noexcept;
 
-        std::expected<int64_t, FrameDecodeError> get_int() noexcept;
+        Result<int64_t> get_int() noexcept;
 
         /**
          * @brief get_total_size returns the actual number of bytes in the BufferManager
          *
          * @return
          */
-        size_t get_total_size() const noexcept;
+        [[nodiscard]] size_t get_total_size() const noexcept;
 
         /**
          * @brief get_simple_frame_variant decodes a frame which has a simple string as internal data.
@@ -163,7 +164,7 @@ namespace redis {
          *
          * @return
          */
-        std::expected<Frame, FrameDecodeError> get_simple_frame_variant(FrameID) noexcept;
+        Result<Frame> get_simple_frame_variant(FrameID);
 
         /**
          * @brief get_bulk_frame_variant decodes a frame which has a bulk string as internal data.
@@ -171,13 +172,13 @@ namespace redis {
          *
          * @return
          */
-        std::expected<Frame, FrameDecodeError> get_bulk_frame_variant(FrameID) noexcept;
+        Result<Frame> get_bulk_frame_variant(FrameID);
 
-        std::expected<Frame, FrameDecodeError> get_integer_frame() noexcept;
+        Result<Frame> get_integer_frame();
 
-        std::expected<Frame, FrameDecodeError> get_boolean_frame() noexcept;
+        Result<Frame> get_boolean_frame();
 
-        std::expected<Frame, FrameDecodeError> get_null_frame() noexcept;
+        Result<Frame> get_null_frame();
     };
 } // namespace redis
 
