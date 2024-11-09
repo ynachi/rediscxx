@@ -103,7 +103,7 @@ namespace redis {
         return result;
     }
 
-    size_t BufferManager::get_total_size() noexcept {
+    size_t BufferManager::get_total_size() const noexcept {
         size_t ans{0};
         for (const auto &buf: this->data_) {
             ans += buf.size();

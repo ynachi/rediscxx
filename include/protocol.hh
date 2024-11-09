@@ -155,7 +155,7 @@ namespace redis {
          *
          * @return
          */
-        size_t get_total_size() noexcept;
+        size_t get_total_size() const noexcept;
 
         /**
          * @brief get_simple_frame_variant decodes a frame which has a simple string as internal data.
