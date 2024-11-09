@@ -1,30 +1,28 @@
+#include "protocol.hh"
 #include <iostream>
-#include <protocol.hh>
 #include <set>
 #include <string>
 
 namespace redis {
     void BufferManager::add_upstream_data(seastar::temporary_buffer<char> chunk) noexcept {
-        this->_data.emplace_back(std::move(chunk));
+        this->data_.emplace_back(std::move(chunk));
     }
 
-     BufferManager::BufferManager(seastar::connected_socket &&fd) noexcept: fd_(std::move(fd)),
+    BufferManager::BufferManager(seastar::connected_socket &&fd) noexcept :
+        fd_(std::move(fd)),
         // @TODO param me
         input_stream_(fd.input(seastar::connected_socket_input_stream_config(1024, 512, 8192))),
         // @TODO param me
-        output_stream_(fd.output(8192))
-    {
-    }
-
+        output_stream_(fd.output(8192)) {}
 
 
     std::expected<std::string, FrameDecodeError> BufferManager::_read_simple_string() noexcept {
-        if (this->_data.empty()) {
+        if (this->data_.empty()) {
             return std::unexpected(FrameDecodeError::Empty);
         }
 
         std::string result;
-        for (const auto &buf: this->_data) {
+        for (const auto &buf: this->data_) {
             for (int i = 0; i < buf.size(); ++i) {
                 auto c = buf[i];
                 switch (c) {
@@ -50,7 +48,7 @@ namespace redis {
     }
 
     std::expected<std::string, FrameDecodeError> BufferManager::_read_bulk_string(size_t n) noexcept {
-        if (this->_data.empty()) {
+        if (this->data_.empty()) {
             return std::unexpected(FrameDecodeError::Empty);
         }
 
@@ -63,7 +61,7 @@ namespace redis {
         std::string str_read;
         size_t buffer_index{0};
         for (; buffer_index < this->get_buffer_number(); ++buffer_index) {
-            auto &current_buf = _data[buffer_index];
+            auto &current_buf = data_[buffer_index];
             if (str_read.size() + current_buf.size() <= n + 2) {
                 str_read.append(current_buf.get(), current_buf.size());
             } else {
@@ -73,7 +71,7 @@ namespace redis {
 
         // At this point, we know the next buffer has enough data for the rest to decode
         size_t bytes_num_left = n + 2 - str_read.size();
-        str_read.append(this->_data[buffer_index].get(), bytes_num_left);
+        str_read.append(this->data_[buffer_index].get(), bytes_num_left);
         auto maybe_crlf = str_read.substr(str_read.length() - 2, 2);
 
         // now check if it is ending with CRLF
@@ -107,7 +105,7 @@ namespace redis {
 
     size_t BufferManager::get_total_size() noexcept {
         size_t ans{0};
-        for (const auto &buf: this->_data) {
+        for (const auto &buf: this->data_) {
             ans += buf.size();
         }
         return ans;
@@ -116,14 +114,14 @@ namespace redis {
     void BufferManager::advance(size_t n) noexcept {
         size_t bytes_to_consume = n;
 
-        while (bytes_to_consume > 0 && !this->_data.empty()) {
-            auto &current_buf = this->_data.front();
+        while (bytes_to_consume > 0 && !this->data_.empty()) {
+            auto &current_buf = this->data_.front();
             size_t buf_size = current_buf.size();
 
             if (buf_size <= bytes_to_consume) {
                 // We need to consume the entire buffer
                 bytes_to_consume -= buf_size;
-                this->_data.pop_front();
+                this->data_.pop_front();
             } else {
                 // We need to consume part of this buffer
                 current_buf.trim_front(bytes_to_consume);
@@ -148,13 +146,13 @@ namespace redis {
 
     void BufferManager::trim_front(size_t n) {
         if (n < this->get_current_buffer_size()) {
-            this->_data.front().trim_front(n);
+            this->data_.front().trim_front(n);
         } else {
             this->pop_front();
         }
     }
 
-    void BufferManager::pop_front() noexcept { this->_data.pop_front(); }
+    void BufferManager::pop_front() noexcept { this->data_.pop_front(); }
 
     std::expected<Frame, FrameDecodeError> BufferManager::get_simple_frame_variant(FrameID frame_id) noexcept {
         if (!std::set{FrameID::SimpleString, FrameID::SimpleError, FrameID::BigNumber}.contains(frame_id)) {
@@ -219,6 +217,44 @@ namespace redis {
             return std::unexpected(frame_data.error());
         }
         return Frame::make_frame(FrameID::Null);
+    }
+
+    seastar::future<> BufferManager::process_frames() {
+        std::cout << "entered process frames"
+                  << "\n";
+        // the caller and this method needs to make sure the connection
+        // object is not out of scope, so use a shared reference from
+        // the current connection.
+        auto const self = this->get_ptr();
+        while (true) {
+            if (self->input_stream_.eof()) {
+                std::cout << "connection was closed by the user"
+                          << "\n";
+                break;
+            }
+            auto tmp_read_buf = co_await self->input_stream_.read();
+            if (tmp_read_buf.empty()) {
+                std::cout << "connection was closed by the user"
+                          << "\n";
+                break;
+            }
+            self->add_upstream_data(std::move(tmp_read_buf));
+            auto data = self->get_simple_string();
+            if (data.error() == FrameDecodeError::Incomplete) {
+                continue;
+            }
+            if (!data.has_value()) {
+                std::cout << "error decoding frame"
+                          << "\n";
+                continue;
+            }
+            const auto &ans = data.value();
+            std::cout << data.value() << "\n";
+            co_await this->output_stream_.write(data.value());
+            co_await this->output_stream_.flush();
+        }
+        co_await self->output_stream_.close();
+        co_return;
     }
 
 } // namespace redis

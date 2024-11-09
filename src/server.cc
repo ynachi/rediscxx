@@ -1,9 +1,9 @@
 //
 // Created by ynachi on 8/17/24.
 //
-#include <connection.hh>
+#include "server.hh"
 #include <seastar/core/seastar.hh>
-#include <server.hh>
+#include "connection.hh"
 
 namespace redis {
     Server::Server(const std::string &ip_addr, const u_int16_t port, const bool reuse_addr) :
@@ -30,10 +30,10 @@ namespace redis {
             try {
                 auto accept_result = co_await this->_listener.accept();
                 // create a connection object here
-                auto const conn = Connection::create(std::move(accept_result), _logger);
+                auto const frame_handler = BufferManager::create(std::move(accept_result.connection));
                 // we use void because we do not want to wait for the future, because connections
                 // should be processed as soon as we get them.
-                (void) seastar::futurize_invoke([conn] { return conn->process_frames(); });
+                (void) seastar::futurize_invoke([frame_handler] { return frame_handler->process_frames(); });
             } catch (std::exception &e) {
                 this->_logger->error("failed to accept a new connection to the server", e.what());
             }

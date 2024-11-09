@@ -5,9 +5,9 @@
 #include <expected>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/temporary_buffer.hh>
+#include <seastar/net/api.hh>
 #include <seastar/net/socket_defs.hh>
 
-#include "connection.hh"
 #include "frame.hh"
 
 namespace redis {
@@ -28,8 +28,12 @@ namespace redis {
      * from the queue. We maintains an internal cursor which denotes where we sit in the next chunk to process
      * (which is actually queue.front()). In case of a faulty frame, the 'bad' data ois trimmed out.
      */
-    class BufferManager {
-        std::deque<seastar::temporary_buffer<char>> _data;
+    class BufferManager : public seastar::enable_lw_shared_from_this<BufferManager> {
+        struct Private {
+            explicit Private() = default;
+        };
+        std::deque<seastar::temporary_buffer<char>> data_;
+        // make the connected socket the same lifecycle as our object. But we explicity don't need i here.
         seastar::connected_socket fd_;
         seastar::input_stream<char> input_stream_;
         seastar::output_stream<char> output_stream_;
@@ -48,6 +52,19 @@ namespace redis {
         std::expected<std::string, FrameDecodeError> _read_bulk_string(size_t n) noexcept;
 
     public:
+        seastar::future<> process_frames();
+
+        seastar::lw_shared_ptr<BufferManager> get_ptr() { return shared_from_this(); }
+
+        static seastar::lw_shared_ptr<BufferManager> create(seastar::connected_socket &&fd) {
+            return seastar::make_lw_shared<BufferManager>(Private(), std::move(fd));
+        }
+
+        explicit BufferManager(Private, seastar::connected_socket &&fd) noexcept :
+            fd_(std::move(fd)), input_stream_(fd_.input()), output_stream_(fd_.output()),
+            remote_address_(fd_.remote_address()) {}
+
+
         // prevent copy because we want to match seastar::temporary_buffer<char> behavior
         // which is not copyable.
         BufferManager(const BufferManager &) = delete;
@@ -57,7 +74,7 @@ namespace redis {
         BufferManager(BufferManager &&other) noexcept = default;
         BufferManager &operator=(BufferManager &&other) noexcept = default;
 
-        BufferManager(seastar::connected_socket&& fd) noexcept;
+        explicit BufferManager(seastar::connected_socket &&fd) noexcept;
 
         /**
          * @brief Adds a chunk of data to the BufferManager. The decoder is supposed to be filled
@@ -97,9 +114,9 @@ namespace redis {
          * @return
          */
         size_t get_current_buffer_size() {
-            if (_data.empty())
+            if (data_.empty())
                 return 0;
-            return _data[0].size();
+            return data_[0].size();
         };
 
         /**
@@ -107,7 +124,7 @@ namespace redis {
          *
          * @return
          */
-        size_t get_buffer_number() { return _data.size(); };
+        size_t get_buffer_number() { return data_.size(); };
 
         /**
          * @brief advance advance the current buffer by n. It removes the buffer if n height than the actual buffer
