@@ -3,7 +3,7 @@
 //
 #include "server.hh"
 #include <seastar/core/seastar.hh>
-#include "connection.hh"
+#include "protocol.hh"
 
 namespace redis {
     Server::Server(const std::string &ip_addr, const u_int16_t port, const bool reuse_addr) :

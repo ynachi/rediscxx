@@ -50,8 +50,8 @@ set(RESP3_SOURCES src/frame_id.cc src/frame.cc)
 add_library(resp3_lib ${RESP3_SOURCES} ${RESP3_HEADERS})
 
 # server
-set(SERVER_HEADERS include/server.hh include/connection.hh include/protocol.hh)
-set(SERVER_SOURCES src/server.cc src/connection.cc src/protocol.cc)
+set(SERVER_HEADERS include/server.hh include/protocol.hh)
+set(SERVER_SOURCES src/server.cc src/protocol.cc)
 add_library(server_lib ${SERVER_SOURCES} ${SERVER_HEADERS})
 target_link_libraries(server_lib PRIVATE Seastar::seastar)
 
