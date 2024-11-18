@@ -1,11 +1,14 @@
 cmake_minimum_required(VERSION 3.28)
+
 if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.30.0")
     cmake_policy(SET CMP0167 OLD)
 endif ()
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # For clang-tidy.
 set(BUILD_SHARED_LIBS OFF) # We expect external libraries to be linked statically.
 project(redis LANGUAGES CXX)
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 20)
+set(GTEST_GIT_TAG v1.15.2)
 
 # Apply AddressSanitizer options only in Debug mode
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
