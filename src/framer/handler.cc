@@ -39,7 +39,7 @@ namespace redis
     }
 
 
-    std::expected<std::string, Handler::DecodeError> Handler::read_simple_string_()
+    Result<std::string> Handler::read_simple_string_()
     {
         if (this->buffer_.size() < 2)
         {
@@ -81,7 +81,7 @@ namespace redis
         return std::unexpected(DecodeError::Incomplete);
     }
 
-    std::expected<int64_t, Handler::DecodeError> Handler::read_integer_()
+    Result<int64_t> Handler::read_integer_()
     {
         auto result = this->read_simple_string_();
         if (!result.has_value())
@@ -100,7 +100,7 @@ namespace redis
         }
     }
 
-    std::expected<std::string, Handler::DecodeError> Handler::read_bulk_string_()
+    Result<std::string> Handler::read_bulk_string_()
     {
         auto size_result = this->read_integer_();
         if (!size_result.has_value())
@@ -126,7 +126,7 @@ namespace redis
         return std::string(left, left + static_cast<int>(size));
     }
 
-    std::expected<Frame, Handler::DecodeError> Handler::read_simple_frame()
+    Result<Frame> Handler::read_simple_frame()
     {
         auto result = this->read_simple_string_();
         if (!result.has_value())

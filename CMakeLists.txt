@@ -45,9 +45,13 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 
 # frame handler
 set(FRAME_HANDLER_HEADERS include/framer/handler.h include/framer/frame.h include/framer/frame_id.h)
-set(FRAME_HANDLER_SOURCES src/framer/handler.cpp src/framer/frame.cpp src/framer/frame_id.cpp)
+set(FRAME_HANDLER_SOURCES src/framer/handler.cc src/framer/frame.cc src/framer/frame_id.cc)
 add_library(framer_lib ${FRAME_HANDLER_SOURCES} ${FRAME_HANDLER_HEADERS})
 target_link_libraries(framer_lib PRIVATE photon_static)
+
+set(UTILS_HEADERS include/errors.h)
+set(UTILS_SOURCE src/errors.cc)
+add_library(utils_source ${UTILS_HEADERS} ${UTILS_SOURCE})
 
 # in memory stream for testing
 add_library(memory_stream_lib include/memory_stream/mstream.h)

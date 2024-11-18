@@ -5,6 +5,7 @@
 #ifndef HANDLER_H
 #define HANDLER_H
 
+#include <errors.h>
 #include <expected>
 #include <photon/net/socket.h>
 #include <vector>
@@ -66,12 +67,12 @@ namespace redis
         [[nodiscard]] char* data_mut() { return buffer_.data(); }
         [[nodiscard]] size_t buffer_size() const { return buffer_.size(); }
 
-        std::expected<Frame, DecodeError> read_simple_frame();
+        Result<Frame> read_simple_frame();
 
     private:
-        std::expected<std::string, DecodeError> read_simple_string_();
-        std::expected<int64_t, DecodeError> read_integer_();
-        std::expected<std::string, DecodeError> read_bulk_string_();
+        Result<std::string> read_simple_string_();
+        Result<int64_t> read_integer_();
+        Result<std::string> read_bulk_string_();
 
         // Choose chunk size wisely. Initially, a buffer of 2 * chunk_size will be allocated for reading
         // on the network stream.
