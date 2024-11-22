@@ -6,6 +6,7 @@
 #define MSTREAM_H
 
 #include <photon/common/utility.h>
+#include <utility>
 
 #include "photon/common/ring.h"
 #include "photon/net/socket.h"
@@ -30,7 +31,7 @@ namespace redis
     class MemoryStream final : public photon::net::ISocketStream
     {
     public:
-        struct SimpleStream
+        struct SimpleStream : std::enable_shared_from_this<SimpleStream>
         {
             std::vector<char> buffer;
             bool is_closed = false;
@@ -71,10 +72,12 @@ namespace redis
                 buffer.insert(buffer.end(), char_buf, char_buf + real_count);
                 return real_count;
             }
+
+            std::shared_ptr<SimpleStream> clone() { return shared_from_this(); }
         };
 
-        MemoryStream(const std::shared_ptr<SimpleStream>& read_end, const std::shared_ptr<SimpleStream>& write_end) :
-            read_end_(read_end), write_end_(write_end){};
+        MemoryStream(std::shared_ptr<SimpleStream> read_end, const std::shared_ptr<SimpleStream>& write_end) :
+            read_end_(std::move(read_end)), write_end_(write_end) {};
 
         // Implementation of ISocketStream methods
         ssize_t read(void* buf, size_t count) override { return this->read_end_->read(buf, count); }
@@ -154,12 +157,15 @@ namespace redis
         int getpeername(photon::net::EndPoint& addr) override { return 0; }
         int getpeername(char* path, size_t count) override { return 0; }
 
-        static std::pair<MemoryStream, MemoryStream> duplex(const size_t max_buffer_size)
+        static std::pair<std::unique_ptr<MemoryStream>, std::unique_ptr<MemoryStream>> duplex(
+                const size_t max_buffer_size)
         {
             auto one = std::make_shared<SimpleStream>(max_buffer_size);
             auto two = std::make_shared<SimpleStream>(max_buffer_size);
+            auto stream1 = std::make_unique<MemoryStream>(one->clone(), two->clone());
+            auto stream2 = std::make_unique<MemoryStream>(two, one);
 
-            return std::make_pair(MemoryStream(one, two), MemoryStream(two, one));
+            return std::make_pair(std::move(stream1), std::move(stream2));
         }
 
     private:

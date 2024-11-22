@@ -18,122 +18,196 @@ namespace redis
         buffer_.reserve(chunk_size_ * 2);
     }
 
-    //@TODO: maybe just return the number of bytes read and let the caller unpack the error
-    ssize_t Handler::read_more_from_stream()
+    std::optional<RedisError> Handler::get_more_data_upstream_()
     {
-        char buf[this->chunk_size_];
-        auto num_read = this->stream_->recv(buf, this->chunk_size_);
-        if (num_read < 0)
+        char read_buffer[chunk_size_];
+        const auto rd = stream_->recv(read_buffer, chunk_size_);
+        if (rd < 0)
         {
-            LOG_DEBUG("fatal network error occurred");
-            return num_read;
+            LOG_WARN("failed to read from stream, error: {}", rd);
+            return RedisError::generic_network_error;
         }
-        if (num_read == 0)
+        if (rd < chunk_size_)
         {
-            LOG_DEBUG("nothing to read from the network, probably reach EOF");
-            return 0;
+            // getting less than chunk_size means we got EOF
+            eof_reached_ = true;
         }
-        LOG_DEBUG("read ", num_read, " number of bytes from the network");
-        this->buffer_.insert(this->buffer_.end(), buf, buf + num_read);
-        return num_read;
+        this->add_more_data(std::span(read_buffer, rd));
+        return std::nullopt;
     }
 
 
-    Result<std::string> Handler::read_simple_string_()
+    Result<std::string> Handler::read_until(const char c)
     {
-        if (this->buffer_.size() < 2)
+        if (this->is_eof())
         {
-            // not enough data to decode a frame
-            return std::unexpected(DecodeError::Incomplete);
+            return make_string_error(RedisError::eof);
         }
 
-        const auto current_cursor = static_cast<int>(this->cursor_pos_);
-        for (auto i = current_cursor; i < this->buffer_.size() - 1; ++i)
+        int64_t cursor{0};
+        for (;;)
         {
-            const auto current_char = this->buffer_[i];
-            if (current_char == CR)
+            if (auto it = std::ranges::find(buffer_.begin() + cursor, buffer_.end(), c); it != buffer_.end())
             {
-                if (i + 1 >= this->buffer_.size())
-                {
-                    // This is an incomplete frame, maybe. e.g: hello\r
-                    return std::unexpected(DecodeError::Incomplete);
-                }
-
-                if (this->buffer_[i + 1] != LF)
-                {
-                    // this frame is in valid because LF is the starting of it, of single CR. e.g: hel\rlo
-                    this->cursor_pos_ += i + 1;
-                    return std::unexpected(DecodeError::Invalid);
-                }
-                auto result =
-                        std::string(this->buffer_.begin() + current_cursor, this->buffer_.begin() + current_cursor + i);
-                this->cursor_pos_ += i + 2;
-                return result;
+                std::string line{buffer_.begin(), it + 1};
+                buffer_.erase(buffer_.begin(), it + 1);
+                return Result<std::string>(line);
             }
-            if (current_char == LF)
+            if (eof_reached_)
             {
-                // this frame is in valid because LF is the starting of it, of single CR. e.g: hel\rlo
-                this->cursor_pos_ += i + 1;
-                return std::unexpected(DecodeError::Invalid);
+                const auto err = buffer_.empty() ? RedisError::eof : RedisError::incomplete_frame;
+                return make_string_error(err);
+            }
+            cursor += static_cast<int64_t>(buffer_.size());
+            // read more data from upstream
+            if (auto maybe_error = this->get_more_data_upstream_(); maybe_error.has_value())
+            {
+                return make_string_error(maybe_error.value());
             }
         }
-        // If no CR is found till the end, it means the frame is incomplete
-        return std::unexpected(DecodeError::Incomplete);
     }
 
-    Result<int64_t> Handler::read_integer_()
+    Result<std::string> Handler::read_exact(const int64_t n)
     {
-        auto result = this->read_simple_string_();
-        if (!result.has_value())
+        assert(n > 0);
+        if (this->is_eof())
         {
-            return std::unexpected(result.error());
+            return make_string_error(RedisError::eof);
         }
-
-        try
+        while (buffer_.size() < n && !eof_reached_)
         {
-            return std::stoll(result.value());
+            if (auto maybe_error = this->get_more_data_upstream_(); maybe_error.has_value())
+            {
+                return make_string_error(maybe_error.value());
+            }
         }
-        catch (const std::exception& _)
+        if (buffer_.size() < n)
         {
-            //@TODO log the error
-            return std::unexpected(DecodeError::Atoi);
+            return make_string_error(RedisError::incomplete_frame);
         }
+        auto ans = std::string(buffer_.begin(), buffer_.begin() + n);
+        buffer_.erase(buffer_.begin(), buffer_.begin() + n);
+        return Result<std::string>(ans);
     }
 
-    Result<std::string> Handler::read_bulk_string_()
-    {
-        auto size_result = this->read_integer_();
-        if (!size_result.has_value())
-        {
-            return std::unexpected(size_result.error());
-        }
 
-        const auto size = size_result.value();
+    // //@TODO: maybe just return the number of bytes read and let the caller unpack the error
+    // ssize_t Handler::read_more_from_stream()
+    // {
+    //     char buf[this->chunk_size_];
+    //     auto num_read = this->stream_->recv(buf, this->chunk_size_);
+    //     if (num_read < 0)
+    //     {
+    //         LOG_DEBUG("fatal network error occurred");
+    //         return num_read;
+    //     }
+    //     if (num_read == 0)
+    //     {
+    //         LOG_DEBUG("nothing to read from the network, probably reach EOF");
+    //         return 0;
+    //     }
+    //     LOG_DEBUG("read ", num_read, " number of bytes from the network");
+    //     this->buffer_.insert(this->buffer_.end(), buf, buf + num_read);
+    //     return num_read;
+    // }
 
-        // save the startup position
-        const auto left = this->buffer_.cbegin() + static_cast<int>(cursor_pos_);
 
-        if (this->buffer_[size + cursor_pos_] != '\r' || this->buffer_[size + cursor_pos_ + 1] != '\n')
-        {
-            // move the cursor after what is supposed to be the end of the frame
-            // we need to move to the next char to process
-            this->cursor_pos_ += size + 2;
-            return std::unexpected(DecodeError::Invalid);
-        }
+    // Result<std::string> Handler::read_simple_string_()
+    // {
+    //     if (this->buffer_.size() < 2)
+    //     {
+    //         // not enough data to decode a frame
+    //         return std::unexpected(DecodeError::Incomplete);
+    //     }
+    //
+    //     const auto current_cursor = static_cast<int>(this->cursor_pos_);
+    //     for (auto i = current_cursor; i < this->buffer_.size() - 1; ++i)
+    //     {
+    //         const auto current_char = this->buffer_[i];
+    //         if (current_char == CR)
+    //         {
+    //             if (i + 1 >= this->buffer_.size())
+    //             {
+    //                 // This is an incomplete frame, maybe. e.g: hello\r
+    //                 return std::unexpected(DecodeError::Incomplete);
+    //             }
+    //
+    //             if (this->buffer_[i + 1] != LF)
+    //             {
+    //                 // this frame is in valid because LF is the starting of it, of single CR. e.g: hel\rlo
+    //                 this->cursor_pos_ += i + 1;
+    //                 return std::unexpected(DecodeError::Invalid);
+    //             }
+    //             auto result =
+    //                     std::string(this->buffer_.begin() + current_cursor, this->buffer_.begin() + current_cursor +
+    //                     i);
+    //             this->cursor_pos_ += i + 2;
+    //             return result;
+    //         }
+    //         if (current_char == LF)
+    //         {
+    //             // this frame is in valid because LF is the starting of it, of single CR. e.g: hel\rlo
+    //             this->cursor_pos_ += i + 1;
+    //             return std::unexpected(DecodeError::Invalid);
+    //         }
+    //     }
+    //     // If no CR is found till the end, it means the frame is incomplete
+    //     return std::unexpected(DecodeError::Incomplete);
+    // }
 
-        // Let's actually read the data we know is enough
-        this->cursor_pos_ += size + 2;
-        return std::string(left, left + static_cast<int>(size));
-    }
+    // Result<int64_t> Handler::read_integer_()
+    // {
+    //     auto result = this->read_simple_string_();
+    //     if (!result.has_value())
+    //     {
+    //         return std::unexpected(result.error());
+    //     }
+    //
+    //     try
+    //     {
+    //         return std::stoll(result.value());
+    //     }
+    //     catch (const std::exception& _)
+    //     {
+    //         //@TODO log the error
+    //         return std::unexpected(DecodeError::Atoi);
+    //     }
+    // }
 
-    Result<Frame> Handler::read_simple_frame()
-    {
-        auto result = this->read_simple_string_();
-        if (!result.has_value())
-        {
-            return std::unexpected(result.error());
-        }
-        return Frame{FrameID::SimpleString, result.value()};
-    }
+    // Result<std::string> Handler::read_bulk_string_()
+    // {
+    //     auto size_result = this->read_integer_();
+    //     if (!size_result.has_value())
+    //     {
+    //         return std::unexpected(size_result.error());
+    //     }
+    //
+    //     const auto size = size_result.value();
+    //
+    //     // save the startup position
+    //     const auto left = this->buffer_.cbegin() + static_cast<int>(cursor_pos_);
+    //
+    //     if (this->buffer_[size + cursor_pos_] != '\r' || this->buffer_[size + cursor_pos_ + 1] != '\n')
+    //     {
+    //         // move the cursor after what is supposed to be the end of the frame
+    //         // we need to move to the next char to process
+    //         this->cursor_pos_ += size + 2;
+    //         return std::unexpected(DecodeError::Invalid);
+    //     }
+    //
+    //     // Let's actually read the data we know is enough
+    //     this->cursor_pos_ += size + 2;
+    //     return std::string(left, left + static_cast<int>(size));
+    // }
+
+    // Result<Frame> Handler::read_simple_frame()
+    // {
+    //     auto result = this->read_simple_string_();
+    //     if (!result.has_value())
+    //     {
+    //         return std::unexpected(result.error());
+    //     }
+    //     return Frame{FrameID::SimpleString, result.value()};
+    // }
 
 }  // namespace redis

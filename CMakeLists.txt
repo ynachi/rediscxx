@@ -54,7 +54,8 @@ set(UTILS_SOURCE src/errors.cc)
 add_library(utils_source ${UTILS_HEADERS} ${UTILS_SOURCE})
 
 # in memory stream for testing
-add_library(memory_stream_lib include/memory_stream/mstream.h)
+add_library(memory_stream_lib include/memory_stream/mstream.h
+)
 target_link_libraries(memory_stream_lib PRIVATE photon_static)
 
 # server
@@ -74,7 +75,7 @@ target_link_libraries(poton PRIVATE photon_static)
 # #####################################################################################################################
 enable_testing()
 add_executable(protocol_test tests/protocol_test.cc)
-target_link_libraries(protocol_test GTest::gtest_main server_lib resp3_lib)
+target_link_libraries(protocol_test GTest::gtest_main framer_lib photon_static)
 add_test(NAME protocol_test COMMAND protocol_test)
 
 add_executable(memory_stream_test tests/memory_stream/mstream_test.cpp)

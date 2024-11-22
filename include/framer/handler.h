@@ -6,45 +6,47 @@
 #define HANDLER_H
 
 #include <errors.h>
-#include <expected>
+#include <optional>
 #include <photon/net/socket.h>
+#include <span>
 #include <vector>
 
 #include "frame.h"
 
 namespace redis
 {
+    /**
+     *
+     */
     class Handler
     {
     public:
-        enum class DecodeError
-        {
-            Invalid,
-            // Incomplete means the caller should ask for more data upstream if possible
-            Incomplete,
-            Empty,
-            Atoi,
-            Eof,
-            //
-            ConnexionReset,
-            WrongArgsType,
-            UndefinedFrame,
-            // non-recoverable network error
-            FatalNetworkError,
-        };
-
         Handler(const Handler&) = delete;
         Handler& operator=(const Handler&) = delete;
         Handler(Handler&&) = delete;
         Handler& operator=(Handler&&) = delete;
 
         Handler(std::unique_ptr<photon::net::ISocketStream> stream, size_t chunk_size);
+
         /**
-         * read_more_from_stream reads some data from the network stream. It is typically called when there is not
-         * enough data to decode a full frame.
-         * @return an integer representing the number of bytes read or -1 if an error occurred.
+         * is_eof checks for real eof meaning the buffer is empty and the eof bit was seen on the upstream stream.
          */
-        ssize_t read_more_from_stream();
+        bool is_eof() const noexcept { return buffer_.empty() && eof_reached_; }
+
+        /**
+         * read_until read from the handler buffer or/and the upstream stream until char c is reached.
+         * This method consume the buffer.
+         * @return the bytes read as a string or an error.
+         * */
+        Result<std::string> read_until(char c);
+
+        /**
+         * read_exact attempt to read exact n bytes from the handler buffer or/and the upstream stream.
+         * This method consume the buffer.
+         * @return the bytes read as a string.
+         * */
+        Result<std::string> read_exact(int64_t n);
+
         /**
          * write_to_stream writes some data to the underlined stream of the handler.
          * It is similar to calling the send method on the Photonlib socket stream.
@@ -69,7 +71,13 @@ namespace redis
 
         Result<Frame> read_simple_frame();
 
+        void add_more_data(std::span<char> bytes) noexcept
+        {
+            buffer_.insert(buffer_.end(), bytes.begin(), bytes.end());
+        }
+
     private:
+        std::optional<RedisError> get_more_data_upstream_();
         Result<std::string> read_simple_string_();
         Result<int64_t> read_integer_();
         Result<std::string> read_bulk_string_();
