@@ -5,7 +5,7 @@
 #ifndef COMMAND_HH
 #define COMMAND_HH
 
-#include <frame.hh>
+#include <framer/frame.h>
 #include <string>
 #include <unordered_map>
 #include <vector>

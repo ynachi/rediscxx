@@ -5,41 +5,35 @@
 #ifndef SERVER_HH
 #define SERVER_HH
 
-#include <boost/asio.hpp>
-#include <connection.hh>
-#include <iostream>
+#include <photon/net/socket.h>
+#include <photon/thread/std-compat.h>
+#include <photon/thread/workerpool.h>
 
 namespace redis
 {
-    using boost::asio::awaitable;
-    using boost::asio::detached;
-    using boost::asio::ip::tcp;
+    // @TODO: validate IPs and provide a config factory method
+    struct ServerConfig
+    {
+        size_t event_thread_count_ = std::thread::hardware_concurrency();
+        size_t event_engine_ = photon::INIT_EVENT_DEFAULT;
+        size_t io_engine_ = photon::INIT_IO_NONE;
+        photon::net::IPAddr host_{"127.0.0.1"};
+        size_t network_read_chunk_{1024};
+        uint16_t port_ = 6379;
+    };
 
     class Server : public std::enable_shared_from_this<Server>
     {
-        struct Private
-        {
-            explicit Private() = default;
-        };
-
     public:
         std::shared_ptr<Server> get_ptr() { return shared_from_this(); }
 
-        Server(Private, boost::asio::io_context &io_context, const tcp::endpoint &endpoint, bool reuse_addr,
-               size_t num_threads);
-
-        static std::shared_ptr<Server> create(boost::asio::io_context &io_context, const tcp::endpoint &endpoint,
-                                              bool reuse_addr, size_t num_threads)
-        {
-            return std::make_shared<Server>(Private(), io_context, endpoint, reuse_addr, num_threads);
-        }
+        explicit Server(const ServerConfig &config);
 
         ~Server()
         {
-            std::cout << "Server destructor called. Cleaning up resources." << std::endl;
-            // Explicit cleanup if needed (for example, stopping io_context)
-            acceptor_.close();
-            io_context_.stop();
+            photon_std::work_pool_fini();
+            photon::fini();
+            delete socket_server_;
         }
 
         Server(const Server &) = delete;
@@ -50,17 +44,15 @@ namespace redis
 
         Server &operator=(Server &&) noexcept = delete;
 
-        awaitable<void> listen();
+        void start_accept_loop();
 
-        void start();
-
-        static awaitable<void> start_session(std::shared_ptr<Connection> conn);
+        static void handle_connection(std::unique_ptr<photon::net::ISocketStream> conn);
 
     private:
-        boost::asio::io_context &io_context_;
-        tcp::acceptor acceptor_;
-        size_t thread_number_ = 10;
-        boost::asio::signal_set signals_;
+        void listen_();
+
+        ServerConfig server_config_{};
+        photon::net::ISocketServer *socket_server_ = nullptr;
     };
 }  // namespace redis
 

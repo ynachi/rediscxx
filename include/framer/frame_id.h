@@ -38,12 +38,12 @@ namespace redis
     inline bool is_bulk_frame(const FrameID frame_id) noexcept
     {
         return frame_id == FrameID::BulkString || frame_id == FrameID::BulkError;
-    };
+    }
 
     inline bool is_simple_frame(const FrameID frame_id) noexcept
     {
         return frame_id == FrameID::SimpleString || frame_id == FrameID::SimpleError || frame_id == FrameID::BigNumber;
-    };
+    }
 }  // namespace redis
 
 #endif  // FRAME_ID_HH
