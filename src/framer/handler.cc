@@ -27,6 +27,7 @@ namespace redis
             LOG_WARN("failed to read from stream, error: {}", rd);
             return RedisError::generic_network_error;
         }
+        if (rd == 0 && buffer_.empty()) return RedisError::eof;
         if (rd < chunk_size_)
         {
             // getting less than chunk_size means we got EOF

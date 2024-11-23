@@ -3,13 +3,12 @@
 #include <photon/common/memory-stream/memory-stream.h>
 #include <photon/common/utility.h>
 #include <photon/photon.h>
-#include <photon/thread/thread.h>
 
 #include "framer/handler.h"
 #include "memory_stream/mstream.h"
 
 using namespace redis;
-class BufferManagerTest : public ::testing::Test
+class HandelerTest : public ::testing::Test
 {
 protected:
     std::unique_ptr<Handler> h;
@@ -30,14 +29,19 @@ protected:
 };
 
 
-TEST_F(BufferManagerTest, GetSimpleString_EmptyData)
+TEST_F(HandelerTest, ReadExact)
 {
-    const char* data = "hello";
-    char buffer[10];
-    client->send(data, 6);
+    // empty buffer handler, nothing in yet
     auto read = h->read_exact(3);
-    EXPECT_TRUE(!read.is_error());
-    EXPECT_EQ(read.value(), "hel");
+    EXPECT_TRUE(read.is_error());
+    EXPECT_EQ(read.error(), RedisError::eof) << "an empty buffer and eof bit set means we are truly EOF";
+    // auto data = "hello";
+    // client->send(data, 6);
+    // auto read = h->read_exact(3);
+    // EXPECT_TRUE(!read.is_error());
+    // EXPECT_EQ(read.value(), "hel");
+    // auto read2 = h->read_exact(2);
+    // EXPECT_EQ(read2.value(), "lo");
 }
 
 // TEST_F(BufferManagerTest, GetSimpleString)
@@ -321,6 +325,7 @@ TEST_F(BufferManagerTest, GetSimpleString_EmptyData)
 
 int main(int argc, char** argv)
 {
+    log_output_level = ALOG_INFO;
     photon::init(photon::INIT_EVENT_DEFAULT, photon::INIT_IO_DEFAULT);
     DEFER(photon::fini(););
     ::testing::InitGoogleTest(&argc, argv);

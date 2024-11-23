@@ -43,15 +43,15 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 # TARGETS
 # #####################################################################################################################
 
+set(UTILS_HEADERS include/errors.h)
+set(UTILS_SOURCE src/errors.cc)
+add_library(utils_lib ${UTILS_HEADERS} ${UTILS_SOURCE})
+
 # frame handler
 set(FRAME_HANDLER_HEADERS include/framer/handler.h include/framer/frame.h include/framer/frame_id.h)
 set(FRAME_HANDLER_SOURCES src/framer/handler.cc src/framer/frame.cc src/framer/frame_id.cc)
 add_library(framer_lib ${FRAME_HANDLER_SOURCES} ${FRAME_HANDLER_HEADERS})
-target_link_libraries(framer_lib PRIVATE photon_static)
-
-set(UTILS_HEADERS include/errors.h)
-set(UTILS_SOURCE src/errors.cc)
-add_library(utils_source ${UTILS_HEADERS} ${UTILS_SOURCE})
+target_link_libraries(framer_lib PRIVATE photon_static utils_lib)
 
 # in memory stream for testing
 add_library(memory_stream_lib include/memory_stream/mstream.h
@@ -83,7 +83,7 @@ target_link_libraries(memory_stream_test GTest::gtest_main memory_stream_lib pho
 add_test(NAME memory_stream_test COMMAND memory_stream_test)
 
 add_executable(parser_test tests/framer/parser_test.cpp)
-target_link_libraries(parser_test GTest::gtest_main framer_lib memory_stream_lib photon_static)
+target_link_libraries(parser_test GTest::gtest_main framer_lib memory_stream_lib photon_static utils_lib)
 add_test(NAME parser_test COMMAND parser_test)
 
 include(GNUInstallDirs)

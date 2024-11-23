@@ -52,8 +52,7 @@ namespace redis
             ssize_t read(void* buf, const size_t count)
             {
                 photon_std::lock_guard lock(mu);
-                if (is_closed) return 0;
-                if (buffer.empty()) return -EAGAIN;
+                if (is_closed || buffer.empty()) return 0;
                 const size_t real_count = std::min(count, buffer.size());
                 std::memcpy(buf, buffer.data(), real_count);
                 buffer.erase(buffer.begin(), buffer.begin() + real_count);

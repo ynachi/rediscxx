@@ -15,9 +15,6 @@
 
 namespace redis
 {
-    /**
-     *
-     */
     class Handler
     {
     public:
@@ -31,7 +28,7 @@ namespace redis
         /**
          * is_eof checks for real eof meaning the buffer is empty and the eof bit was seen on the upstream stream.
          */
-        bool is_eof() const noexcept { return buffer_.empty() && eof_reached_; }
+        [[nodiscard]] bool is_eof() const noexcept { return buffer_.empty() && eof_reached_; }
 
         /**
          * read_until read from the handler buffer or/and the upstream stream until char c is reached.

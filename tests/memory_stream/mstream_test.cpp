@@ -43,14 +43,14 @@ TEST(mstream, double_rw)
     ASSERT_EQ(" world", view);
 }
 
-TEST(mstream, empty_r_would_block)
+TEST(mstream, empty_r_empty_buf)
 {
     auto [_, server] = MemoryStream::duplex(1024);
 
     std::vector<char> buffer;
     buffer.resize(1024);
     auto rd = server->read(buffer.data(), 6);
-    ASSERT_EQ(rd, -EAGAIN);
+    ASSERT_EQ(rd, 0);
 }
 
 TEST(mstream, simple_rw_more_than_available)
