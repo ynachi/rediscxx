@@ -98,3 +98,5 @@ cmake-build-*
 # Google Test artifacts
 libgtest.a
 libgtest_main.a
+
+Testing

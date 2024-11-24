@@ -40,7 +40,7 @@ namespace redis
 
     Result<std::string> Handler::read_until(const char c)
     {
-        if (this->is_eof())
+        if (this->seen_eof())
         {
             return make_string_error(RedisError::eof);
         }
@@ -71,11 +71,11 @@ namespace redis
     Result<std::string> Handler::read_exact(const int64_t n)
     {
         assert(n > 0);
-        if (this->is_eof())
+        if (this->empty() && this->seen_eof())
         {
             return make_string_error(RedisError::eof);
         }
-        while (buffer_.size() < n && !eof_reached_)
+        while (buffer_.size() < n && !seen_eof())
         {
             if (auto maybe_error = this->get_more_data_upstream_(); maybe_error.has_value())
             {
@@ -84,7 +84,7 @@ namespace redis
         }
         if (buffer_.size() < n)
         {
-            return make_string_error(RedisError::incomplete_frame);
+            return make_string_error(RedisError::not_enough_data);
         }
         auto ans = std::string(buffer_.begin(), buffer_.begin() + n);
         buffer_.erase(buffer_.begin(), buffer_.begin() + n);

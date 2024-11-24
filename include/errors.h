@@ -16,6 +16,7 @@ namespace redis
         atoi,
         wrong_arg_types,
         eof,
+        not_enough_data,
         generic_network_error,
     };
 
@@ -43,6 +44,8 @@ namespace redis
                     return "received a wrong frame variant as arg";
                 case RedisError::eof:
                     return "stream reached eof";
+                case RedisError::not_enough_data:
+                    return "eof is seen and the internal buffer does not have enough data to fulfill the request";
                 case RedisError::generic_network_error:
                     return "network error occurred";
             }
@@ -68,9 +71,9 @@ namespace redis
     {
         std::variant<T, RedisError> data;
 
-        [[nodiscard]] bool is_error() const noexcept { return std::holds_alternative<RedisError>(data); }
+        [[nodiscard]] constexpr bool is_error() const noexcept { return std::holds_alternative<RedisError>(data); }
 
-        [[nodiscard]] const T &value() const
+        [[nodiscard]] constexpr const T &value() const
         {
             if (is_error())
             {
@@ -79,16 +82,7 @@ namespace redis
             return std::get<T>(data);
         }
 
-        T &value()
-        {
-            if (is_error())
-            {
-                throw std::logic_error("cannot get value from an error variant");
-            }
-            return std::get<T>(data);
-        }
-
-        [[nodiscard]] RedisError error() const
+        [[nodiscard]] constexpr RedisError error() const
         {
             if (!is_error())
             {
@@ -97,7 +91,8 @@ namespace redis
             return std::get<RedisError>(data);
         }
 
-        static Result make_error(const RedisError err) { return Result{err}; }
+        // make_error() function is now declared as constexpr
+        static constexpr Result make_error(const RedisError err) { return Result{err}; }
     };
 
     constexpr Result<std::string> make_string_error(const RedisError err) noexcept

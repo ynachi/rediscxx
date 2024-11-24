@@ -8,7 +8,7 @@
 #include "memory_stream/mstream.h"
 
 using namespace redis;
-class HandelerTest : public ::testing::Test
+class HandlerTest : public ::testing::Test
 {
 protected:
     std::unique_ptr<Handler> h;
@@ -18,7 +18,7 @@ protected:
     {
         auto dup = MemoryStream::duplex(1024);
         client = std::move(dup.first);
-        h = std::make_unique<Handler>(std::move(dup.second), 6);
+        h = std::make_unique<Handler>(std::move(dup.second), 1024);
         // Code here will be called immediately after the constructor (right before each test).
     }
 
@@ -29,19 +29,32 @@ protected:
 };
 
 
-TEST_F(HandelerTest, ReadExact)
+TEST_F(HandlerTest, ReadExact)
 {
     // empty buffer handler, nothing in yet
     auto read = h->read_exact(3);
     EXPECT_TRUE(read.is_error());
     EXPECT_EQ(read.error(), RedisError::eof) << "an empty buffer and eof bit set means we are truly EOF";
-    // auto data = "hello";
-    // client->send(data, 6);
-    // auto read = h->read_exact(3);
-    // EXPECT_TRUE(!read.is_error());
-    // EXPECT_EQ(read.value(), "hel");
-    // auto read2 = h->read_exact(2);
-    // EXPECT_EQ(read2.value(), "lo");
+
+    auto data = "hello";
+    client->send(data, 5);
+    auto read1 = h->read_exact(3);
+    EXPECT_FALSE(read1.is_error());
+    EXPECT_EQ(read1.value(), "hel") << "read_exact can read part of a buffer";
+
+    auto read2 = h->read_exact(2);
+    EXPECT_EQ(read2.value(), "lo") << "read_exact can read part the rest of a buffer";
+    ASSERT_TRUE(h->seen_eof()) << "read_exact: the buffer is empty and eof seen in upstream";
+}
+
+TEST_F(HandlerTest, ReadExactNotEnoughData)
+{
+    std::string_view data{"hello1"};
+    client->send(data.data(), data.size());
+    auto read3 = h->read_exact(8);
+    ASSERT_TRUE(h->seen_eof()) << "read_exact: reading more than the buffer should set EOF bit";
+    EXPECT_TRUE(read3.is_error());
+    EXPECT_EQ(read3.error(), RedisError::not_enough_data) << "read_exact: should error when there is not enough data ";
 }
 
 // TEST_F(BufferManagerTest, GetSimpleString)
@@ -326,7 +339,7 @@ TEST_F(HandelerTest, ReadExact)
 int main(int argc, char** argv)
 {
     log_output_level = ALOG_INFO;
-    photon::init(photon::INIT_EVENT_DEFAULT, photon::INIT_IO_DEFAULT);
+    photon::init(photon::INIT_EVENT_IOURING, photon::INIT_IO_NONE);
     DEFER(photon::fini(););
     ::testing::InitGoogleTest(&argc, argv);
     auto ret = RUN_ALL_TESTS();

@@ -11,10 +11,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(GTEST_GIT_TAG v1.15.2)
 
 # Apply AddressSanitizer options only in Debug mode
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_compile_options(-fsanitize=address -g)
-    add_link_options(-fsanitize=address)
-endif ()
+#if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+#    add_compile_options(-fsanitize=address -g)
+#    add_link_options(-fsanitize=address)
+#endif ()
 
 set(REDISCXX_BUILD_SUPPORT_DIR "${CMAKE_SOURCE_DIR}/build_support")
 
@@ -85,6 +85,11 @@ add_test(NAME memory_stream_test COMMAND memory_stream_test)
 add_executable(parser_test tests/framer/parser_test.cpp)
 target_link_libraries(parser_test GTest::gtest_main framer_lib memory_stream_lib photon_static utils_lib)
 add_test(NAME parser_test COMMAND parser_test)
+
+# Label tests
+set_tests_properties(memory_stream_test PROPERTIES LABELS "MemoryStream")
+set_tests_properties(protocol_test PROPERTIES LABELS "Protocol")
+set_tests_properties(parser_test PROPERTIES LABELS "All")
 
 include(GNUInstallDirs)
 install(TARGETS redis

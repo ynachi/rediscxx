@@ -28,7 +28,9 @@ namespace redis
         /**
          * is_eof checks for real eof meaning the buffer is empty and the eof bit was seen on the upstream stream.
          */
-        [[nodiscard]] bool is_eof() const noexcept { return buffer_.empty() && eof_reached_; }
+        [[nodiscard]] bool seen_eof() const noexcept { return eof_reached_; }
+
+        [[nodiscard]] bool empty() const noexcept { return buffer_.empty(); }
 
         /**
          * read_until read from the handler buffer or/and the upstream stream until char c is reached.
