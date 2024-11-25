@@ -32,9 +32,12 @@ namespace redis
 
         [[nodiscard]] bool empty() const noexcept { return buffer_.empty(); }
 
+        // get buffer
+        [[nodiscard]] const std::vector<char>& get_buffer() const noexcept { return buffer_; }
+
         /**
          * read_until read from the handler buffer or/and the upstream stream until char c is reached.
-         * This method consume the buffer.
+         * This method consume the buffer. The answer contains the delimiter.
          * @return the bytes read as a string or an error.
          * */
         Result<std::string> read_until(char c);
@@ -42,7 +45,8 @@ namespace redis
         /**
          * read_exact attempt to read exact n bytes from the handler buffer or/and the upstream stream.
          * This method consume the buffer.
-         * @return the bytes read as a string.
+         * @return the bytes read as a string. Can return EOF if the buffer is empty and EOF bit is set, unexpected
+         * network IO errors or not enough data.
          * */
         Result<std::string> read_exact(int64_t n);
 
@@ -76,7 +80,7 @@ namespace redis
         }
 
     private:
-        std::optional<RedisError> get_more_data_upstream_();
+        Result<ssize_t> get_more_data_upstream_();
         Result<std::string> read_simple_string_();
         Result<int64_t> read_integer_();
         Result<std::string> read_bulk_string_();

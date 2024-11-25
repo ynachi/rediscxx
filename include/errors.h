@@ -90,22 +90,15 @@ namespace redis
             }
             return std::get<RedisError>(data);
         }
-
-        // make_error() function is now declared as constexpr
-        static constexpr Result make_error(const RedisError err) { return Result{err}; }
     };
 
-    constexpr Result<std::string> make_string_error(const RedisError err) noexcept
-    {
-        return Result<std::string>::make_error(err);
-    }
+    constexpr Result<std::string> make_string_error(const RedisError err) noexcept { return Result<std::string>{err}; }
 
-    constexpr Result<Frame> make_frame_error(const RedisError err) noexcept { return Result<Frame>::make_error(err); }
+    constexpr Result<Frame> make_frame_error(const RedisError err) noexcept { return Result<Frame>{err}; }
 
-    constexpr Result<int64_t> make_int64_error(const RedisError err) noexcept
-    {
-        return Result<int64_t>::make_error(err);
-    }
+    constexpr Result<int64_t> make_int64_error(const RedisError err) noexcept { return Result<int64_t>{err}; }
+
+    constexpr Result<ssize_t> make_ssizet_error(const RedisError err) noexcept { return Result<ssize_t>{err}; }
 
 }  // namespace redis
 

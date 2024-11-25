@@ -18,29 +18,29 @@ namespace redis
         buffer_.reserve(chunk_size_ * 2);
     }
 
-    std::optional<RedisError> Handler::get_more_data_upstream_()
+    Result<ssize_t> Handler::get_more_data_upstream_()
     {
         char read_buffer[chunk_size_];
         const auto rd = stream_->recv(read_buffer, chunk_size_);
         if (rd < 0)
         {
             LOG_WARN("failed to read from stream, error: {}", rd);
-            return RedisError::generic_network_error;
+            return make_ssizet_error(RedisError::generic_network_error);
         }
-        if (rd == 0 && buffer_.empty()) return RedisError::eof;
+        if (rd == 0 && buffer_.empty()) return make_ssizet_error(RedisError::eof);
         if (rd < chunk_size_)
         {
             // getting less than chunk_size means we got EOF
             eof_reached_ = true;
         }
         this->add_more_data(std::span(read_buffer, rd));
-        return std::nullopt;
+        return Result<ssize_t>{rd};
     }
 
 
     Result<std::string> Handler::read_until(const char c)
     {
-        if (this->seen_eof())
+        if (this->empty() && this->seen_eof())
         {
             return make_string_error(RedisError::eof);
         }
@@ -54,17 +54,20 @@ namespace redis
                 buffer_.erase(buffer_.begin(), it + 1);
                 return Result<std::string>(line);
             }
+            LOG_DEBUG("could not find the delimiter in the internal buffer, calling more from source stream");
             if (eof_reached_)
             {
                 const auto err = buffer_.empty() ? RedisError::eof : RedisError::incomplete_frame;
                 return make_string_error(err);
             }
-            cursor += static_cast<int64_t>(buffer_.size());
+            cursor = static_cast<int64_t>(this->buffer_size());
             // read more data from upstream
-            if (auto maybe_error = this->get_more_data_upstream_(); maybe_error.has_value())
+            auto maybe_error = this->get_more_data_upstream_();
+            if (maybe_error.is_error())
             {
-                return make_string_error(maybe_error.value());
+                return make_string_error(maybe_error.error());
             }
+            LOG_DEBUG("poured {} bytes from source stream", maybe_error.value());
         }
     }
 
@@ -77,9 +80,9 @@ namespace redis
         }
         while (buffer_.size() < n && !seen_eof())
         {
-            if (auto maybe_error = this->get_more_data_upstream_(); maybe_error.has_value())
+            if (auto maybe_error = this->get_more_data_upstream_(); maybe_error.is_error())
             {
-                return make_string_error(maybe_error.value());
+                return make_string_error(maybe_error.error());
             }
         }
         if (buffer_.size() < n)

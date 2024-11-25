@@ -14,7 +14,7 @@ void handle_connection(photon::net::ISocketStream* stream)
         if (ret <= 0)
         {
             LOG_FATAL("failed to bind tcp socket");
-            // LOG_ERRNO_RETURN(0, , "failed to read socket");
+            // LOG_ERRNO_RETURN(0,, "failed to read socket");
         }
         // Echo the received message back to the client
         for (size_t i = 0; i < ret; ++i)

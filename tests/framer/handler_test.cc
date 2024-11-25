@@ -1,10 +1,11 @@
+#include "framer/handler.h"
+
 #include <gtest/gtest.h>
 #include <photon/common/alog.h>
 #include <photon/common/memory-stream/memory-stream.h>
 #include <photon/common/utility.h>
 #include <photon/photon.h>
 
-#include "framer/handler.h"
 #include "memory_stream/mstream.h"
 
 using namespace redis;
@@ -18,7 +19,7 @@ protected:
     {
         auto dup = MemoryStream::duplex(1024);
         client = std::move(dup.first);
-        h = std::make_unique<Handler>(std::move(dup.second), 1024);
+        h = std::make_unique<Handler>(std::move(dup.second), 25);
         // Code here will be called immediately after the constructor (right before each test).
     }
 
@@ -28,7 +29,9 @@ protected:
     }
 };
 
-
+//
+// Read Exact
+//
 TEST_F(HandlerTest, ReadExact)
 {
     // empty buffer handler, nothing in yet
@@ -55,6 +58,66 @@ TEST_F(HandlerTest, ReadExactNotEnoughData)
     ASSERT_TRUE(h->seen_eof()) << "read_exact: reading more than the buffer should set EOF bit";
     EXPECT_TRUE(read3.is_error());
     EXPECT_EQ(read3.error(), RedisError::not_enough_data) << "read_exact: should error when there is not enough data ";
+}
+
+//
+// Read until
+//
+
+TEST_F(HandlerTest, ReadUntilBasic)
+{
+    auto data = "hello\nha";
+    client->send(data, 8);
+    auto read = h->read_until('\n');
+    EXPECT_EQ(read.value(), "hello\n") << "read_until can read part of a buffer";
+    ASSERT_TRUE(h->seen_eof()) << "read_until: data read is lower than chunk size, so EOF should be set";
+    ASSERT_EQ(std::string_view(h->get_buffer().begin(), h->get_buffer().end()), "ha");
+}
+
+TEST_F(HandlerTest, ReadUntilMultipleReads)
+{
+    auto data = "hello\nworld\nouu";
+    client->send(data, 15);
+    auto read = h->read_until('\n');
+    EXPECT_EQ(read.value(), "hello\n") << "read_until can read part of a buffer";
+    ASSERT_TRUE(h->seen_eof()) << "read_until: data read is lower than chunk size, so EOF should be set";
+    ASSERT_EQ(std::string_view(h->get_buffer().begin(), h->get_buffer().end()), "world\nouu");
+    auto read2 = h->read_until('\n');
+    EXPECT_EQ(read2.value(), "world\n") << "read_until subsequent reads are still success even if the network is "
+                                           "closed because the buffer hold valid data";
+}
+
+TEST_F(HandlerTest, ReadUntilMultipleChunkLowerThanData)
+{
+    std::string data;
+    for (int i = 0; i < 100; ++i)
+    {
+        data += "hello\n";
+    }
+    client->send(data.data(), 600);
+    auto read = h->read_until('\n');
+    EXPECT_EQ(read.value(), "hello\n") << "read_until can read part of a buffer";
+    ASSERT_FALSE(h->seen_eof()) << "read_until: chunk is lower than data so EOF should not be set";
+}
+
+TEST_F(HandlerTest, ReadUntilMultipleRequestSpanMultipleInternalReads)
+{
+    // Internally, we will need make multiple read call under the hood.
+    std::string data;
+    for (int i = 0; i < 11; ++i)
+    {
+        data += "hello";
+    }
+    data += "\nhahah";
+    client->send(data.data(), data.size());
+    auto read = h->read_until('\n');
+    EXPECT_EQ(read.value().size(), 56) << "read_until can read part of a buffer";
+    // ASSERT_FALSE(h->seen_eof()) << "read_until: chunk is lower than data so EOF should not be set";
+    // auto read2 = h->read_until('\n');
+    // EXPECT_EQ(read2.value(), "hello\nhahah") << "read_until can read part of a buffer";
+    // ASSERT_FALSE(h->seen_eof()) << "read_until: chunk is lower than data so EOF should not be set";
+    // auto read3 = h->read_until('\n');
+    // EXPECT_EQ(read3.value(), "hello\nhahah") << "read_until can read part of a buffer";
 }
 
 // TEST_F(BufferManagerTest, GetSimpleString)

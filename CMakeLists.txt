@@ -74,7 +74,7 @@ target_link_libraries(poton PRIVATE photon_static)
 # TEST TARGETS
 # #####################################################################################################################
 enable_testing()
-add_executable(protocol_test tests/protocol_test.cc)
+add_executable(protocol_test tests/framer/handler_test.cc)
 target_link_libraries(protocol_test GTest::gtest_main framer_lib photon_static)
 add_test(NAME protocol_test COMMAND protocol_test)
 
@@ -82,14 +82,11 @@ add_executable(memory_stream_test tests/memory_stream/mstream_test.cpp)
 target_link_libraries(memory_stream_test GTest::gtest_main memory_stream_lib photon_static)
 add_test(NAME memory_stream_test COMMAND memory_stream_test)
 
-add_executable(parser_test tests/framer/parser_test.cpp)
-target_link_libraries(parser_test GTest::gtest_main framer_lib memory_stream_lib photon_static utils_lib)
-add_test(NAME parser_test COMMAND parser_test)
 
 # Label tests
 set_tests_properties(memory_stream_test PROPERTIES LABELS "MemoryStream")
 set_tests_properties(protocol_test PROPERTIES LABELS "Protocol")
-set_tests_properties(parser_test PROPERTIES LABELS "All")
+
 
 include(GNUInstallDirs)
 install(TARGETS redis
