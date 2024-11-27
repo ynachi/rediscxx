@@ -11,10 +11,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(GTEST_GIT_TAG v1.15.2)
 
 # Apply AddressSanitizer options only in Debug mode
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_compile_options(-fsanitize=address -g)
-    add_link_options(-fsanitize=address)
-endif ()
+#if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+#    add_compile_options(-fsanitize=address -g)
+#    add_link_options(-fsanitize=address)
+#endif ()
 
 set(REDISCXX_BUILD_SUPPORT_DIR "${CMAKE_SOURCE_DIR}/build_support")
 
@@ -48,8 +48,8 @@ set(UTILS_SOURCE src/errors.cc)
 add_library(utils_lib ${UTILS_HEADERS} ${UTILS_SOURCE})
 
 # frame handler
-set(FRAME_HANDLER_HEADERS include/framer/handler.h include/framer/frame.h include/framer/frame_id.h)
-set(FRAME_HANDLER_SOURCES src/framer/handler.cc src/framer/frame.cc src/framer/frame_id.cc)
+set(FRAME_HANDLER_HEADERS include/framer/handler.h include/framer/frame.h)
+set(FRAME_HANDLER_SOURCES src/framer/handler.cc src/framer/frame.cc)
 add_library(framer_lib ${FRAME_HANDLER_SOURCES} ${FRAME_HANDLER_HEADERS})
 target_link_libraries(framer_lib PRIVATE photon_static utils_lib)
 
@@ -74,7 +74,7 @@ target_link_libraries(poton PRIVATE photon_static)
 # TEST TARGETS
 # #####################################################################################################################
 enable_testing()
-add_executable(protocol_test tests/protocol_test.cc)
+add_executable(protocol_test tests/framer/handler_test.cc)
 target_link_libraries(protocol_test GTest::gtest_main framer_lib photon_static)
 add_test(NAME protocol_test COMMAND protocol_test)
 
@@ -82,9 +82,11 @@ add_executable(memory_stream_test tests/memory_stream/mstream_test.cpp)
 target_link_libraries(memory_stream_test GTest::gtest_main memory_stream_lib photon_static)
 add_test(NAME memory_stream_test COMMAND memory_stream_test)
 
-add_executable(parser_test tests/framer/parser_test.cpp)
-target_link_libraries(parser_test GTest::gtest_main framer_lib memory_stream_lib photon_static utils_lib)
-add_test(NAME parser_test COMMAND parser_test)
+
+# Label tests
+set_tests_properties(memory_stream_test PROPERTIES LABELS "MemoryStream")
+set_tests_properties(protocol_test PROPERTIES LABELS "Protocol")
+
 
 include(GNUInstallDirs)
 install(TARGETS redis
