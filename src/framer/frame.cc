@@ -8,6 +8,34 @@
 
 namespace redis
 {
+    FrameID frame_id_from_u8(const uint8_t from)
+    {
+        switch (from)
+        {
+            using enum FrameID;
+            case kInteger:
+                return Integer;
+            case kSimpleString:
+                return SimpleString;
+            case kSimpleError:
+                return SimpleError;
+            case kBulkString:
+                return BulkString;
+            case kBulkError:
+                return BulkError;
+            case kBoolean:
+                return Boolean;
+            case kNull:
+                return Null;
+            case kBigNumber:
+                return BigNumber;
+            case kArray:
+                return Array;
+            default:
+                return Undefined;
+        }
+    }
+
     Frame Frame::make_frame(const FrameID &frame_id)
     {
         switch (frame_id)

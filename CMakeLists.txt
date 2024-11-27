@@ -48,8 +48,8 @@ set(UTILS_SOURCE src/errors.cc)
 add_library(utils_lib ${UTILS_HEADERS} ${UTILS_SOURCE})
 
 # frame handler
-set(FRAME_HANDLER_HEADERS include/framer/handler.h include/framer/frame.h include/framer/frame_id.h)
-set(FRAME_HANDLER_SOURCES src/framer/handler.cc src/framer/frame.cc src/framer/frame_id.cc)
+set(FRAME_HANDLER_HEADERS include/framer/handler.h include/framer/frame.h)
+set(FRAME_HANDLER_SOURCES src/framer/handler.cc src/framer/frame.cc)
 add_library(framer_lib ${FRAME_HANDLER_SOURCES} ${FRAME_HANDLER_HEADERS})
 target_link_libraries(framer_lib PRIVATE photon_static utils_lib)
 

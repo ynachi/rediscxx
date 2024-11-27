@@ -27,6 +27,8 @@ namespace redis
             //@TODO categorize
             case RedisError::generic_network_error:
                 return o << "RedisError::generic_network_error";
+            case RedisError::max_recursion_depth:
+                return o << "RedisError::max_recursion_depth";
         }
         return o << "redis::RedisError::unknown";
     }

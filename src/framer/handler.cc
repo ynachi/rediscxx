@@ -4,6 +4,8 @@
 
 #include "framer/handler.h"
 
+#include <algorithm>
+#include <charconv>
 #include <photon/common/alog.h>
 
 
@@ -34,7 +36,7 @@ namespace redis
             eof_reached_ = true;
         }
         this->add_more_data(std::span(read_buffer, rd));
-        return Result<ssize_t>{rd};
+        return {rd};
     }
 
 
@@ -52,9 +54,9 @@ namespace redis
             {
                 std::string line{buffer_.begin(), it + 1};
                 buffer_.erase(buffer_.begin(), it + 1);
-                return Result<std::string>(line);
+                return {line};
             }
-            LOG_DEBUG("could not find the delimiter in the internal buffer, calling more from source stream");
+            // LOG_DEBUG("could not find the delimiter in the internal buffer, calling more from source stream");
             if (eof_reached_)
             {
                 const auto err = buffer_.empty() ? RedisError::eof : RedisError::incomplete_frame;
@@ -91,127 +93,220 @@ namespace redis
         }
         auto ans = std::string(buffer_.begin(), buffer_.begin() + n);
         buffer_.erase(buffer_.begin(), buffer_.begin() + n);
-        return Result<std::string>(ans);
+        return {ans};
+    }
+
+    Result<std::string> Handler::get_simple_string_()
+    {
+        const auto maybe_ans = this->read_until(LF);
+        if (maybe_ans.is_error())
+        {
+            return make_string_error(maybe_ans.error());
+        }
+        auto ans_view = std::string_view(maybe_ans.value());
+        if (ans_view.size() < 2)
+        {
+            LOG_DEBUG("get_simple_string: data is less than 2 bytes");
+            return make_string_error(RedisError::incomplete_frame);
+        };
+        if (ans_view[ans_view.size() - 2] != CR)
+        {
+            LOG_DEBUG("get_simple_string: found a standalone LF in the frame, this should not be in simple frames");
+            return make_string_error(RedisError::invalid_frame);
+        }
+        if (std::ranges::find(ans_view.begin(), ans_view.end() - 2, CR) != ans_view.end() - 2)
+        {
+            LOG_DEBUG("get_simple_string: found a standalone CR in the frame, this should not be in simple frames");
+            return make_string_error(RedisError::invalid_frame);
+        }
+        return {std::string(ans_view.data(), ans_view.size() - 2)};
+    }
+
+    Result<int64_t> Handler::get_integer_()
+    {
+        const auto maybe_ans = this->get_simple_string_();
+        if (maybe_ans.is_error())
+        {
+            return make_int64_error(maybe_ans.error());
+        }
+        int64_t ans;
+        auto [_, ec] =
+                std::from_chars(maybe_ans.value().data(), maybe_ans.value().data() + maybe_ans.value().size(), ans);
+        if (ec == std::errc())
+        {
+            return Result<int64_t>(ans);
+        }
+        return make_int64_error(RedisError::atoi);
     }
 
 
-    // //@TODO: maybe just return the number of bytes read and let the caller unpack the error
-    // ssize_t Handler::read_more_from_stream()
-    // {
-    //     char buf[this->chunk_size_];
-    //     auto num_read = this->stream_->recv(buf, this->chunk_size_);
-    //     if (num_read < 0)
-    //     {
-    //         LOG_DEBUG("fatal network error occurred");
-    //         return num_read;
-    //     }
-    //     if (num_read == 0)
-    //     {
-    //         LOG_DEBUG("nothing to read from the network, probably reach EOF");
-    //         return 0;
-    //     }
-    //     LOG_DEBUG("read ", num_read, " number of bytes from the network");
-    //     this->buffer_.insert(this->buffer_.end(), buf, buf + num_read);
-    //     return num_read;
-    // }
+    Result<std::string> Handler::get_bulk_string_()
+    {
+        auto size_result = this->get_integer_();
+        if (size_result.is_error())
+        {
+            return make_string_error(size_result.error());
+        }
+        auto size = size_result.value();
+        if (size == -1)
+        {
+            // if size == -1, the user intent was to specially send empty bulk frame
+            return {""};
+        }
+        if (size == 0)
+        {
+            // LOG_ERROR("decode: got a bulk frame with size 0");
+            return {RedisError::invalid_frame};
+        }
+
+        // also read the CRLF, hence, size + 2
+        auto interim_read = read_exact(size + 2);
+        if (interim_read.is_error())
+        {
+            return make_string_error(interim_read.error());
+        }
+
+        auto ans_view = std::string_view(interim_read.value());
 
 
-    // Result<std::string> Handler::read_simple_string_()
-    // {
-    //     if (this->buffer_.size() < 2)
-    //     {
-    //         // not enough data to decode a frame
-    //         return std::unexpected(DecodeError::Incomplete);
-    //     }
-    //
-    //     const auto current_cursor = static_cast<int>(this->cursor_pos_);
-    //     for (auto i = current_cursor; i < this->buffer_.size() - 1; ++i)
-    //     {
-    //         const auto current_char = this->buffer_[i];
-    //         if (current_char == CR)
-    //         {
-    //             if (i + 1 >= this->buffer_.size())
-    //             {
-    //                 // This is an incomplete frame, maybe. e.g: hello\r
-    //                 return std::unexpected(DecodeError::Incomplete);
-    //             }
-    //
-    //             if (this->buffer_[i + 1] != LF)
-    //             {
-    //                 // this frame is in valid because LF is the starting of it, of single CR. e.g: hel\rlo
-    //                 this->cursor_pos_ += i + 1;
-    //                 return std::unexpected(DecodeError::Invalid);
-    //             }
-    //             auto result =
-    //                     std::string(this->buffer_.begin() + current_cursor, this->buffer_.begin() + current_cursor +
-    //                     i);
-    //             this->cursor_pos_ += i + 2;
-    //             return result;
-    //         }
-    //         if (current_char == LF)
-    //         {
-    //             // this frame is in valid because LF is the starting of it, of single CR. e.g: hel\rlo
-    //             this->cursor_pos_ += i + 1;
-    //             return std::unexpected(DecodeError::Invalid);
-    //         }
-    //     }
-    //     // If no CR is found till the end, it means the frame is incomplete
-    //     return std::unexpected(DecodeError::Incomplete);
-    // }
+        if (ans_view[ans_view.size() - 2] != CR || ans_view[ans_view.size() - 1] != LF)
+        {
+            return make_string_error(RedisError::invalid_frame);
+        }
 
-    // Result<int64_t> Handler::read_integer_()
-    // {
-    //     auto result = this->read_simple_string_();
-    //     if (!result.has_value())
-    //     {
-    //         return std::unexpected(result.error());
-    //     }
-    //
-    //     try
-    //     {
-    //         return std::stoll(result.value());
-    //     }
-    //     catch (const std::exception& _)
-    //     {
-    //         //@TODO log the error
-    //         return std::unexpected(DecodeError::Atoi);
-    //     }
-    // }
+        return Result<std::string>(std::string(ans_view.data(), ans_view.size() - 2));
+    }
 
-    // Result<std::string> Handler::read_bulk_string_()
-    // {
-    //     auto size_result = this->read_integer_();
-    //     if (!size_result.has_value())
-    //     {
-    //         return std::unexpected(size_result.error());
-    //     }
-    //
-    //     const auto size = size_result.value();
-    //
-    //     // save the startup position
-    //     const auto left = this->buffer_.cbegin() + static_cast<int>(cursor_pos_);
-    //
-    //     if (this->buffer_[size + cursor_pos_] != '\r' || this->buffer_[size + cursor_pos_ + 1] != '\n')
-    //     {
-    //         // move the cursor after what is supposed to be the end of the frame
-    //         // we need to move to the next char to process
-    //         this->cursor_pos_ += size + 2;
-    //         return std::unexpected(DecodeError::Invalid);
-    //     }
-    //
-    //     // Let's actually read the data we know is enough
-    //     this->cursor_pos_ += size + 2;
-    //     return std::string(left, left + static_cast<int>(size));
-    // }
+    Result<FrameID> Handler::get_frame_id_()
+    {
+        if (!this->seen_eof())
+        {
+            if (auto maybe_err = this->get_more_data_upstream_(); maybe_err.is_error())
+            {
+                return {maybe_err.error()};
+            }
+        }
+        if (this->empty())
+        {
+            return {RedisError::eof};
+        }
+        auto c = this->buffer_[0];
+        this->buffer_.erase(this->buffer_.begin());
+        return {frame_id_from_u8(c)};
+    }
 
-    // Result<Frame> Handler::read_simple_frame()
-    // {
-    //     auto result = this->read_simple_string_();
-    //     if (!result.has_value())
-    //     {
-    //         return std::unexpected(result.error());
-    //     }
-    //     return Frame{FrameID::SimpleString, result.value()};
-    // }
+    Result<Frame> Handler::decode(const u_int8_t dept, const u_int8_t max_depth)
+    {
+        if (dept >= max_depth)
+        {
+            return {RedisError::max_recursion_depth};
+        }
+        const auto maybe_id = this->get_frame_id_();
+        if (maybe_id.is_error())
+        {
+            return {maybe_id.error()};
+        }
+        switch (const auto id = maybe_id.value())
+        {
+            case FrameID::Integer:
+            {
+                const auto int_ans = this->get_integer_();
+                if (int_ans.is_error())
+                {
+                    return {int_ans.error()};
+                }
+                return {Frame{id, int_ans.value()}};
+            }
+            case FrameID::SimpleString:
+            case FrameID::SimpleError:
+            case FrameID::BigNumber:
+            {
+                const auto simple_str_ans = this->get_simple_string_();
+                if (simple_str_ans.is_error())
+                {
+                    LOG_DEBUG("decode: got an error while decoding a simple frame variant: {}", simple_str_ans.error());
+                    return {simple_str_ans.error()};
+                }
+                return {Frame{id, simple_str_ans.value()}};
+            }
+            case FrameID::Null:
+                return get_null_frame_();
+            case FrameID::Boolean:
+                return get_bool_frame_();
+            case FrameID::BulkString:
+            case FrameID::BulkError:
+            {
+                const auto content = this->get_bulk_string_();
+                if (content.is_error())
+                {
+                    return {content.error()};
+                }
+                return {Frame{id, content.value()}};
+            }
+            case FrameID::Array:
+            {
+                return decode_array_(dept, max_depth);
+            }
+            default:
+                return {Frame{FrameID::Undefined, std::monostate{}}};
+        }
+    }
+
+    Result<Frame> Handler::get_null_frame_()
+    {
+        const auto ans = this->get_simple_string_();
+        if (ans.is_error())
+        {
+            return {ans.error()};
+        }
+        if (const std::string & ans_value{ans.value()}; !ans_value.empty())
+        {
+            LOG_DEBUG("decode: got a non-null frame with data");
+            return {RedisError::invalid_frame};
+        }
+        return {Frame{FrameID::Null, std::monostate{}}};
+    }
+
+    Result<Frame> Handler::get_bool_frame_()
+    {
+        const auto data = this->get_simple_string_();
+        if (data.is_error())
+        {
+            return {data.error()};
+        }
+        std::string_view ans_view{data.value()};
+        if (ans_view == "t")
+        {
+            return {Frame{FrameID::Boolean, true}};
+        }
+        if (ans_view == "f")
+        {
+            return {Frame{FrameID::Boolean, false}};
+        }
+        LOG_DEBUG("decode: got a bool frame with data other than bool");
+        return {RedisError::invalid_frame};
+    }
+
+    Result<Frame> Handler::decode_array_(const u_int8_t dept, const u_int8_t max_depth)
+    {
+        const auto size_result = this->get_integer_();
+        if (size_result.is_error())
+        {
+            return {size_result.error()};
+        }
+        const auto size = size_result.value();
+        std::vector<Frame> frames;
+        frames.reserve(size);
+        for (int64_t i = 0; i < size; ++i)
+        {
+            const auto frame = this->decode(dept + 1, max_depth);
+            if (frame.is_error())
+            {
+                return {frame.error()};
+            }
+            frames.emplace_back(frame.value());
+        }
+        return {Frame{FrameID::Array, frames}};
+    }
 
 }  // namespace redis

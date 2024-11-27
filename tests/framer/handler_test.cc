@@ -87,6 +87,16 @@ TEST_F(HandlerTest, ReadUntilMultipleReads)
                                            "closed because the buffer hold valid data";
 }
 
+TEST_F(HandlerTest, ReadUntilDelimiterAtBoundary)
+{
+    auto data = "hello\n";
+    client->send(data, 6);
+    auto read = h->read_until('\n');
+    EXPECT_EQ(read.value(), "hello\n") << "read_until can read part of a buffer";
+    ASSERT_TRUE(h->seen_eof()) << "read_until: data read is lower than chunk size, so EOF should be set";
+    ASSERT_TRUE(h->empty());
+}
+
 TEST_F(HandlerTest, ReadUntilMultipleChunkLowerThanData)
 {
     std::string data;
@@ -100,7 +110,7 @@ TEST_F(HandlerTest, ReadUntilMultipleChunkLowerThanData)
     ASSERT_FALSE(h->seen_eof()) << "read_until: chunk is lower than data so EOF should not be set";
 }
 
-TEST_F(HandlerTest, ReadUntilMultipleRequestSpanMultipleInternalReads)
+TEST_F(HandlerTest, ReadUntilRequestSpanMultipleInternalReads)
 {
     // Internally, we will need make multiple read call under the hood.
     std::string data;
@@ -112,158 +122,190 @@ TEST_F(HandlerTest, ReadUntilMultipleRequestSpanMultipleInternalReads)
     client->send(data.data(), data.size());
     auto read = h->read_until('\n');
     EXPECT_EQ(read.value().size(), 56) << "read_until can read part of a buffer";
-    // ASSERT_FALSE(h->seen_eof()) << "read_until: chunk is lower than data so EOF should not be set";
-    // auto read2 = h->read_until('\n');
-    // EXPECT_EQ(read2.value(), "hello\nhahah") << "read_until can read part of a buffer";
-    // ASSERT_FALSE(h->seen_eof()) << "read_until: chunk is lower than data so EOF should not be set";
-    // auto read3 = h->read_until('\n');
-    // EXPECT_EQ(read3.value(), "hello\nhahah") << "read_until can read part of a buffer";
+    EXPECT_EQ(std::string_view(data.data(), 56), read.value());
 }
 
-// TEST_F(BufferManagerTest, GetSimpleString)
-// {
-//     auto& buffer = h.get_buffer();
-//     buffer.push_back('A');
-//     auto result = h.get_simple_string();
-//     EXPECT_EQ(result.error(), FrameDecodeError::Incomplete) << "frame should be terminated by CRLF";
-//     EXPECT_EQ(h.get_cursor(), 0) << R"(buffer should not be altered when hitting "incomplete" error type)";
-//
-//     append_str(buffer, "BC\r");  // os is now "ABC\r"
-//     auto result2 = h.get_simple_string();
-//     EXPECT_EQ(result2.error(), FrameDecodeError::Incomplete) << "single CR at the end probably means incomplete
-//     frame"; EXPECT_EQ(h.get_cursor(), 0) << R"(buffer should not be altered when hitting "incomplete" error type)";
-//
-//     append_str(buffer, "DEF");  // os is now "ABC\rDEF"
-//     auto result3 = h.get_simple_string();
-//     EXPECT_EQ(result3.error(), FrameDecodeError::Invalid) << "isolated CR in a simple frame is an error";
-//     EXPECT_EQ(h.get_cursor(), 4) << R"(should strip out "ABC\r" and let "DEF")";
-//
-//     append_str(buffer, "\nDEF");  // os is now "ABC\rDEF\nDEF", cursor is at position 4
-//     auto result4 = h.get_simple_string();
-//     EXPECT_EQ(result4.error(), FrameDecodeError::Invalid) << "isolated LF in a simple frame is an error";
-//     EXPECT_EQ(h.get_cursor(), 8) << R"(should strip out "DEF\n" and let "DEF")";
-//
-//     append_str(buffer, "\nABC\r\nDEF\r\n55\r\n");  // os is now "ABC\rDEF\nDEF\nABC\r\nDEF\r\n55\r\n"
-//     auto result5 = h.get_simple_string();
-//     EXPECT_EQ(result5.error(), FrameDecodeError::Invalid) << "isolated LF in a simple frame is an error";
-//     EXPECT_EQ(h.get_cursor(), 12) << R"(cursor should be at position 12)";
-//
-//     h.consume();  // os should be now "ABC\r\nDEF\r\n55\r\n"
-//     EXPECT_EQ(h.get_cursor(), 0) << R"("consume" method should set the cursor back to 0)";
-//     EXPECT_EQ(buffer.size(), 14) << R"("consume" should have stripped out the first 12 chars)";
-//
-//     auto result6 = h.get_simple_string();
-//     EXPECT_EQ(result6.value(), "ABC") << "can decode a valid frame";
-//     EXPECT_EQ(buffer.size(), 14) << R"(should not automatically alter the buffer data)";
-//     EXPECT_EQ(h.get_cursor(), 5) << R"("get_simple_string" the cursor should move after the decoded frame if
-//     success)";
-//
-//     auto result7 = h.get_simple_string();
-//     EXPECT_EQ(result7.value(), "DEF") << "can decode a valid frame after another in the same stream";
-//     EXPECT_EQ(h.get_cursor(), 10) << R"("get_simple_string" can decode another good frame from the same stream)";
-//
-//     auto result8 = h.get_simple_string();
-//     EXPECT_EQ(result8.value(), "55") << "can decode a valid frame at the end of a stream";
-//     EXPECT_EQ(h.get_cursor(), 14) << R"("get_simple_string" can decode a frame ending the stream)";
-//
-//     h.consume();  // os should be now ""
-//     EXPECT_EQ(h.get_cursor(), 0) << R"("consume" method should set the cursor back to 0)";
-//     EXPECT_EQ(buffer.size(), 0) << R"("consume" should have stripped out everything and should not prduce
-//     exception)";
-// }
-//
-// // ****************
-// // get_bulk_string
-// // **************
-// TEST_F(BufferManagerTest, GetBulkString_EmptyData)
-// {
-//     auto result = h.get_bulk_string(6);
-//     EXPECT_EQ(result.error(), FrameDecodeError::Empty);
-// }
-//
-// TEST_F(BufferManagerTest, GetBulkString)
-// {
-//     auto& buffer = h.get_buffer();
-//     buffer.push_back('A');
-//     buffer.push_back('\r');
-//     buffer.push_back('\n');
-//     auto result = h.get_bulk_string(2);
-//     EXPECT_EQ(result.error(), FrameDecodeError::Incomplete);
-//
-//     const auto result1 = h.get_bulk_string(1);
-//     EXPECT_EQ(result1.value(), "A") << "get_bulk_string: can decode a simple 1 byte frame";
-//     EXPECT_EQ(h.get_cursor(), 3) << R"(get_bulk_string: incomplete error variant does not move the cursor)";
-//
-//     append_str(buffer, "ABC\r");  // buffers is now "A\r\nABC\r"
-//     auto result2 = h.get_bulk_string(3);
-//     EXPECT_EQ(result2.error(), FrameDecodeError::Incomplete) << "bulk string is not terminated by CRLF";
-//     EXPECT_EQ(h.get_cursor(), 3);
-//
-//     append_str(buffer, "\nDEF\rABC\r\nEF\nXFG\r\n");  // "A\r\nABC\r\nDEF\rABC\r\nEF\nXFG\r\n"
-//     const auto result3 = h.get_bulk_string(3);
-//     EXPECT_EQ(result3.value(), "ABC") << "get_bulk_string can decode string";
-//     EXPECT_EQ(h.get_cursor(), 8);
-//
-//     auto result4 = h.get_bulk_string(7);
-//     EXPECT_EQ(result4.value(), "DEF\rABC") << "get_bulk_string can decode a string with CR in it";
-//     EXPECT_EQ(h.get_cursor(), 17);
-//
-//     auto result5 = h.get_bulk_string(6);
-//     EXPECT_EQ(result5.value(), "EF\nXFG") << "get_bulk_string can decode a string with LF in it";
-//     EXPECT_EQ(h.get_cursor(), 25);
-// }
-//
-// TEST_F(BufferManagerTest, GetInt)
-// {
-//     auto& buffer = h.get_buffer();
-//     append_str(buffer, "25\r\na26\r\n");
-//
-//     const auto result = h.get_int();
-//     EXPECT_EQ(result.value(), 25);
-//
-//     auto result2 = h.get_int();
-//     EXPECT_EQ(result2.error(), FrameDecodeError::Atoi);
-// }
-//
-// TEST_F(BufferManagerTest, GetBool)
-// {
-//     auto& buffer = h.get_buffer();
-//     append_str(buffer, "t\r\na26\r\n");
-//
-//     const auto result = h.get_boolean_frame();
-//     const auto ans = Frame{FrameID::Boolean, true};
-//     EXPECT_EQ(result.value(), ans);
-// }
-//
-// TEST_F(BufferManagerTest, GetNull)
-// {
-//     auto& buffer = h.get_buffer();
-//     append_str(buffer, "t\r\na26\r\n");
-//
-//     const auto result = h.get_null_frame();
-//     const auto ans = Frame{
-//             FrameID::Null,
-//     };
-//     EXPECT_EQ(result.value(), ans);
-// }
-//
-// TEST_F(BufferManagerTest, get_simple_frame_variant)
-// {
-//     auto& buffer = h.get_buffer();
-//     append_str(buffer, "ABC\r\na26\r\nt\r\n");
-//
-//     auto result = h.get_simple_frame_variant(FrameID::SimpleString);
-//     auto ans = Frame{FrameID::SimpleString, "ABC"};
-//     EXPECT_EQ(result.value(), ans);
-//
-//     auto result1 = h.get_simple_frame_variant(FrameID::Integer);
-//     EXPECT_EQ(result1.error(), FrameDecodeError::WrongArgsType);
-//
-//     auto result2 = h.get_simple_frame_variant(FrameID::SimpleError);
-//     auto ans2 = Frame{FrameID::SimpleError, "a26"};
-//     EXPECT_EQ(result2.value(), ans2);
-// }
-//
+TEST_F(HandlerTest, ReadUntilEmptyBufferNoData)
+{
+    auto read = h->read_until('\n');
+    ASSERT_TRUE(read.is_error());
+    ASSERT_EQ(read.error(), RedisError::eof) << "an empty buffer and EOF set to EOF";
+}
+
+TEST_F(HandlerTest, ReadUntilNoDelimiter)
+{
+    std::string data = "hello";
+    client->send(data.data(), data.size());
+    auto read = h->read_until('\n');
+    ASSERT_TRUE(read.is_error());
+    //@TODO change the error to delimiter not found
+    ASSERT_EQ(read.error(), RedisError::incomplete_frame) << "the delimiter does not exist in this stream";
+}
+
+TEST_F(HandlerTest, DecodeIntAtBoundary)
+{
+    const std::string data = ":25\r\n";
+    client->send(data.data(), data.size());
+    auto read = h->decode(0, MAX_RECURSION_DEPTH);
+    ASSERT_FALSE(read.is_error());
+    auto frame = Frame{FrameID::Integer, 25};
+    ASSERT_EQ(read.value(), frame);
+}
+
+TEST_F(HandlerTest, DecodeIntInTheMiddle)
+{
+    const std::string data = ":0\r\nheloe";
+    client->send(data.data(), data.size());
+    auto read = h->decode(0, MAX_RECURSION_DEPTH);
+    ASSERT_FALSE(read.is_error());
+    auto frame = Frame{FrameID::Integer, 0};
+    ASSERT_EQ(read.value(), frame);
+}
+
+TEST_F(HandlerTest, DecodeIntNagative)
+{
+    const std::string data = ":-25\r\n";
+    client->send(data.data(), data.size());
+    auto read = h->decode(0, MAX_RECURSION_DEPTH);
+    ASSERT_FALSE(read.is_error());
+    auto frame = Frame{FrameID::Integer, -25};
+    ASSERT_EQ(read.value(), frame);
+}
+
+TEST_F(HandlerTest, DecodeIntAtoi)
+{
+    const std::string data = ":-aeQ\r\n";
+    client->send(data.data(), data.size());
+    auto read = h->decode(0, MAX_RECURSION_DEPTH);
+    ASSERT_TRUE(read.is_error());
+    ASSERT_EQ(read.error(), RedisError::atoi);
+}
+
+TEST_F(HandlerTest, DecodeSimpleIncomplete)
+{
+    const std::string data = ":\r";
+    client->send(data.data(), data.size());
+    auto read = h->decode(0, MAX_RECURSION_DEPTH);
+    ASSERT_TRUE(read.is_error());
+    ASSERT_EQ(read.error(), RedisError::incomplete_frame);
+}
+
+TEST_F(HandlerTest, DecodeSimpleInvalid)
+{
+    const std::string data = ":T\n";
+    client->send(data.data(), data.size());
+    auto read = h->decode(0, MAX_RECURSION_DEPTH);
+    ASSERT_TRUE(read.is_error());
+    ASSERT_EQ(read.error(), RedisError::invalid_frame);
+}
+
+TEST_F(HandlerTest, DecodeSimpleInvalid2)
+{
+    const std::string data = "+hel\rlo\r\n";
+    client->send(data.data(), data.size());
+    auto read = h->decode(0, MAX_RECURSION_DEPTH);
+    ASSERT_TRUE(read.is_error());
+    ASSERT_EQ(read.error(), RedisError::invalid_frame);
+}
+
+TEST_F(HandlerTest, DecodeSimpleInvalid3)
+{
+    const std::string data = "+hel\nlo\r\n";
+    client->send(data.data(), data.size());
+    auto read = h->decode(0, MAX_RECURSION_DEPTH);
+    ASSERT_TRUE(read.is_error());
+    ASSERT_EQ(read.error(), RedisError::invalid_frame);
+}
+
+TEST_F(HandlerTest, DecodeSimpleEoF)
+{
+    auto read = h->decode(0, MAX_RECURSION_DEPTH);
+    ASSERT_TRUE(read.is_error());
+    ASSERT_EQ(read.error(), RedisError::eof);
+}
+
+TEST_F(HandlerTest, DecodeBulk)
+{
+    const std::string data = "$5\r\nhello\r\n$6\r\nhel\rlo\r\n$6\r\nhel\nlo\r\n$6\r\nhellojj\r";
+    client->send(data.data(), data.size());
+
+    auto b_string1 = h->decode(0, MAX_RECURSION_DEPTH);
+    ASSERT_FALSE(b_string1.is_error());
+    auto frame = Frame{FrameID::BulkString, "hello"};
+    ASSERT_EQ(b_string1.value(), frame);
+
+    auto b_string2 = h->decode(0, MAX_RECURSION_DEPTH);
+    ASSERT_FALSE(b_string2.is_error());
+    auto frame2 = Frame{FrameID::BulkString, "hel\rlo"};
+    ASSERT_EQ(b_string2.value(), frame2);
+
+    auto b_string3 = h->decode(0, MAX_RECURSION_DEPTH);
+    ASSERT_FALSE(b_string3.is_error());
+    auto frame3 = Frame{FrameID::BulkString, "hel\nlo"};
+    ASSERT_EQ(b_string3.value(), frame3);
+
+    auto b_string4 = h->decode(0, MAX_RECURSION_DEPTH);
+    ASSERT_TRUE(b_string4.is_error());
+    ASSERT_EQ(b_string4.error(), RedisError::invalid_frame);
+}
+
+TEST_F(HandlerTest, DecodeBool)
+{
+    const std::string data = "#t\r\n#f\r\n#u\r\n";
+    client->send(data.data(), data.size());
+
+    auto bool1 = h->decode(0, MAX_RECURSION_DEPTH);
+    ASSERT_FALSE(bool1.is_error());
+    auto frame = Frame{FrameID::Boolean, true};
+    ASSERT_EQ(bool1.value(), frame);
+
+    auto bool2 = h->decode(0, MAX_RECURSION_DEPTH);
+    ASSERT_FALSE(bool2.is_error());
+    auto frame2 = Frame{FrameID::Boolean, false};
+    ASSERT_EQ(bool2.value(), frame2);
+
+    auto bool3 = h->decode(0, MAX_RECURSION_DEPTH);
+    ASSERT_TRUE(bool3.is_error());
+    ASSERT_EQ(bool3.error(), RedisError::invalid_frame);
+}
+
+TEST_F(HandlerTest, DecodeSimple)
+{
+    const std::string data = "+hello\r\n+-25\r\n-hello\r\n";
+    client->send(data.data(), data.size());
+
+    auto read = h->decode(0, MAX_RECURSION_DEPTH);
+    ASSERT_FALSE(read.is_error());
+    auto frame = Frame{FrameID::SimpleString, "hello"};
+    ASSERT_EQ(read.value(), frame);
+
+    auto read2 = h->decode(0, MAX_RECURSION_DEPTH);
+    ASSERT_FALSE(read2.is_error());
+    auto frame2 = Frame{FrameID::SimpleString, "-25"};
+    ASSERT_EQ(read2.value(), frame2);
+
+    auto read3 = h->decode(0, MAX_RECURSION_DEPTH);
+    ASSERT_FALSE(read3.is_error());
+    auto frame3 = Frame{FrameID::SimpleError, "hello"};
+    ASSERT_EQ(read3.value(), frame3);
+}
+
+TEST_F(HandlerTest, DecodeNull)
+{
+    const std::string data = "_\r\n_f\r\n$u\r\n";
+    client->send(data.data(), data.size());
+
+    auto read = h->decode(0, MAX_RECURSION_DEPTH);
+    ASSERT_FALSE(read.is_error());
+    auto frame = Frame{FrameID::Null, std::monostate{}};
+    ASSERT_EQ(read.value(), frame);
+
+    auto read2 = h->decode(0, MAX_RECURSION_DEPTH);
+    ASSERT_TRUE(read2.is_error());
+    ASSERT_EQ(read2.error(), RedisError::invalid_frame);
+}
+
+
 // TEST_F(BufferManagerTest, DecodeNonNested)
 // {
 //     auto& buffer = h.get_buffer();

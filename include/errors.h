@@ -18,6 +18,7 @@ namespace redis
         eof,
         not_enough_data,
         generic_network_error,
+        max_recursion_depth,
     };
 
     std::ostream &operator<<(std::ostream &o, RedisError err);
@@ -48,6 +49,8 @@ namespace redis
                     return "eof is seen and the internal buffer does not have enough data to fulfill the request";
                 case RedisError::generic_network_error:
                     return "network error occurred";
+                case RedisError::max_recursion_depth:
+                    return "reached frame nesting limit";
             }
             return "redis::RedisError::unknown";
         }

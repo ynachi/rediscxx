@@ -15,6 +15,9 @@
 
 namespace redis
 {
+
+    constexpr int MAX_RECURSION_DEPTH = 30;
+
     class Handler
     {
     public:
@@ -79,11 +82,17 @@ namespace redis
             buffer_.insert(buffer_.end(), bytes.begin(), bytes.end());
         }
 
+        Result<Frame> decode(u_int8_t dept, u_int8_t max_depth);
+
     private:
         Result<ssize_t> get_more_data_upstream_();
-        Result<std::string> read_simple_string_();
-        Result<int64_t> read_integer_();
-        Result<std::string> read_bulk_string_();
+        Result<std::string> get_simple_string_();
+        Result<std::string> get_bulk_string_();
+        Result<int64_t> get_integer_();
+        Result<FrameID> get_frame_id_();
+        Result<Frame> get_null_frame_();
+        Result<Frame> get_bool_frame_();
+        Result<Frame> decode_array_(u_int8_t dept, u_int8_t max_depth);
 
         // Choose chunk size wisely. Initially, a buffer of 2 * chunk_size will be allocated for reading
         // on the network stream.
