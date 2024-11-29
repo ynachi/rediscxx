@@ -23,8 +23,8 @@ namespace redis
     public:
         Handler(const Handler&) = delete;
         Handler& operator=(const Handler&) = delete;
-        Handler(Handler&&) = delete;
-        Handler& operator=(Handler&&) = delete;
+        Handler(Handler&&) = default;
+        Handler& operator=(Handler&&) = default;
 
         Handler(std::unique_ptr<photon::net::ISocketStream> stream, size_t chunk_size);
 
@@ -75,14 +75,15 @@ namespace redis
         [[nodiscard]] char* data_mut() { return buffer_.data(); }
         [[nodiscard]] size_t buffer_size() const { return buffer_.size(); }
 
-        Result<Frame> read_simple_frame();
-
         void add_more_data(std::span<char> bytes) noexcept
         {
             buffer_.insert(buffer_.end(), bytes.begin(), bytes.end());
         }
 
         Result<Frame> decode(u_int8_t dept, u_int8_t max_depth);
+
+        // start session sart processing and responding to frames.
+        void start_session();
 
     private:
         Result<ssize_t> get_more_data_upstream_();

@@ -30,6 +30,9 @@ else ()
     message(STATUS "redis/main found clang-format at ${CLANG_FORMAT_BIN}")
 endif ()
 
+# python
+find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+
 # Photon
 include(cmake/FindPhoton.cmake)
 

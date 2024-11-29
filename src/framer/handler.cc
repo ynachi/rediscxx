@@ -309,4 +309,29 @@ namespace redis
         return {Frame{FrameID::Array, frames}};
     }
 
+    void Handler::start_session()
+    {
+        LOG_DEBUG("starting a session on vcpu ");
+        for (;;)
+        {
+            auto maybe_frame = this->decode(0, 8);
+            if (!maybe_frame.is_error())
+            {
+                auto data = maybe_frame.value().to_string();
+                this->stream_->send(data.data(), data.length());
+            }
+            else
+            {
+                auto err = maybe_frame.error();
+                if (err == RedisError::eof)
+                {
+                    LOG_DEBUG("client disconnected");
+                    return;
+                }
+                Frame err_frame{Frame{FrameID::SimpleError, "error while reading frames"}};
+                this->stream_->send(err_frame.to_string().data(), err_frame.to_string().length());
+            }
+        }
+    }
+
 }  // namespace redis
