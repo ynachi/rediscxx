@@ -50,8 +50,6 @@ namespace redis
 
         void run();
 
-        static void handle_connection(std::unique_ptr<photon::net::ISocketStream> stream);
-
     private:
         ServerConfig server_config_{};
         std::unique_ptr<photon::net::ISocketServer> socket_server_;

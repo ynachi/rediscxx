@@ -53,7 +53,7 @@ namespace redis
         // Vector is used for all aggregate frames.
         // For maps, we double the number of elements.
         // Each k,v is adjacent to the vector.
-        // @TODO use std::optional<std::string> to allow to represent null null strings
+        // @TODO use std::optional<std::string> to allow to represent null strings
         std::variant<std::monostate, std::string, int64_t, bool, std::vector<Frame>> data;
 
         static Frame make_frame(const FrameID& frame_id);
@@ -61,6 +61,8 @@ namespace redis
         bool operator==(const Frame& other) const { return frame_id == other.frame_id && data == other.data; }
 
         [[nodiscard]] std::string to_string() const noexcept;
+
+        [[nodiscard]] std::vector<char> as_bytes() const noexcept;
     };
 }  // namespace redis
 
