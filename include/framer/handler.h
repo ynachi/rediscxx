@@ -43,7 +43,7 @@ namespace redis
          * This method consume the buffer. The answer contains the delimiter.
          * @return the bytes read as a string or an error.
          * */
-        Result<std::string> read_until(char c);
+        Result<bytes> read_until(char c);
 
         /**
          * read_exact attempt to read exact n bytes from the handler buffer or/and the upstream stream.
@@ -51,7 +51,7 @@ namespace redis
          * @return the bytes read as a string. Can return EOF if the buffer is empty and EOF bit is set, unexpected
          * network IO errors or not enough data.
          * */
-        Result<std::string> read_exact(int64_t n);
+        Result<bytes> read_exact(int64_t n);
 
         /**
          * write_to_stream writes some data to the underlined stream of the handler.
@@ -87,8 +87,8 @@ namespace redis
 
     private:
         Result<ssize_t> get_more_data_upstream_();
-        Result<std::string> get_simple_string_();
-        Result<std::string> get_bulk_string_();
+        Result<bytes> get_simple_string_();
+        Result<bytes> get_bulk_string_();
         Result<int64_t> get_integer_();
         Result<FrameID> get_frame_id_();
         Result<Frame> get_null_frame_();
@@ -98,7 +98,7 @@ namespace redis
         // Choose chunk size wisely. Initially, a buffer of 2 * chunk_size will be allocated for reading
         // on the network stream.
         size_t chunk_size_ = 1024;
-        std::vector<char> buffer_;
+        bytes buffer_;
         std::unique_ptr<photon::net::ISocketStream> stream_;
         bool eof_reached_ = false;
         size_t cursor_pos_ = 0;

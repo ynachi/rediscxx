@@ -11,17 +11,19 @@
 
 namespace redis
 {
-    constexpr uint8_t kInteger = 58;  // ':'
-    constexpr uint8_t kSimpleString = 43;  // '+'
-    constexpr uint8_t kSimpleError = 45;  // '-'
-    constexpr uint8_t kBulkString = 36;  // '$'
-    constexpr uint8_t kBulkError = 33;  // '!'
-    constexpr uint8_t kBoolean = 35;  // '#'
-    constexpr uint8_t kNull = 95;  // '_'
-    constexpr uint8_t kBigNumber = 40;  // '('
-    constexpr uint8_t kArray = 42;  // '*'
+    using bytes = std::vector<char>;
 
-    enum class FrameID : uint8_t
+    constexpr char kInteger = ':';
+    constexpr char kSimpleString = '+';
+    constexpr char kSimpleError = '-';
+    constexpr char kBulkString = '$';
+    constexpr char kBulkError = '!';
+    constexpr char kBoolean = '#';
+    constexpr char kNull = '_';
+    constexpr char kBigNumber = '(';
+    constexpr char kArray = '*';
+
+    enum class FrameID : char
     {
         Integer = kInteger,  // ':'
         SimpleString = kSimpleString,  // '+'
@@ -54,7 +56,7 @@ namespace redis
         // For maps, we double the number of elements.
         // Each k,v is adjacent to the vector.
         // @TODO use std::optional<std::string> to allow to represent null strings
-        std::variant<std::monostate, std::string, int64_t, bool, std::vector<Frame>> data;
+        std::variant<std::monostate, bytes, int64_t, bool, std::vector<Frame>> data;
 
         static Frame make_frame(const FrameID& frame_id);
 
