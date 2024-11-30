@@ -37,7 +37,7 @@ namespace redis
         Undefined
     };
 
-    FrameID frame_id_from_u8(uint8_t from);
+    FrameID frame_id_from_char(char from);
 
     inline bool is_aggregate_frame(const FrameID frame_id) noexcept { return frame_id == FrameID::Array; };
     inline bool is_bulk_frame(const FrameID frame_id) noexcept

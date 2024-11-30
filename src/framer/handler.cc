@@ -27,9 +27,9 @@ namespace redis
         if (rd < 0)
         {
             LOG_WARN("failed to read from stream, error: {}", rd);
-            return make_ssizet_error(RedisError::generic_network_error);
+            return {RedisError::generic_network_error};
         }
-        if (rd == 0 && buffer_.empty()) return make_ssizet_error(RedisError::eof);
+        if (rd == 0 && buffer_.empty()) return {RedisError::eof};
         if (rd < chunk_size_)
         {
             // getting less than chunk_size means we got EOF
@@ -192,7 +192,7 @@ namespace redis
         }
         auto c = this->buffer_[0];
         this->buffer_.erase(this->buffer_.begin());
-        return {frame_id_from_u8(c)};
+        return {frame_id_from_char(c)};
     }
 
     Result<Frame> Handler::decode(const u_int8_t dept, const u_int8_t max_depth)
@@ -309,27 +309,33 @@ namespace redis
         return {Frame{FrameID::Array, frames}};
     }
 
-    // void Handler::start_session()
-    // {
-    //     LOG_DEBUG("starting a session on vcpu:", sched_getcpu());
-    //     for (;;)
-    //     {
-    //         if (auto maybe_frame = this->decode(0, 8); !maybe_frame.is_error())
-    //         {
-    //             auto data = maybe_frame.value().to_string();
-    //             this->stream_->send(data.data(), data.length());
-    //         }
-    //         else
-    //         {
-    //             if (const auto err = maybe_frame.error(); err == RedisError::eof)
-    //             {
-    //                 LOG_DEBUG("client disconnected");
-    //                 return;
-    //             }
-    //             Frame err_frame{Frame{FrameID::SimpleError, "error while reading frames"}};
-    //             this->stream_->send(err_frame.to_string().data(), err_frame.to_string().length());
-    //         }
-    //     }
-    // }
+    void Handler::start_session()
+    {
+        LOG_DEBUG("starting a session on vcpu:", sched_getcpu());
+        for (;;)
+        {
+            if (auto maybe_frame = this->decode(0, 8); !maybe_frame.is_error())
+            {
+                auto data = maybe_frame.value().to_string();
+                auto _ = this->send_frame(maybe_frame.value());
+            }
+            else
+            {
+                const auto err = maybe_frame.error();
+                if (err == RedisError::eof)
+                {
+                    LOG_DEBUG("client disconnected");
+                    return;
+                }
+                std::error_code ec = make_error_code(err);
+                auto err_msg = ec.message();
+                //@TODO create the right error frame
+                auto err_frame{Frame{FrameID::SimpleError, std::vector<char>{err_msg.begin(), err_msg.end()}}};
+
+                LOG_DEBUG("error while decoding frame");
+                auto _ = this->send_frame(err_frame);
+            }
+        }
+    }
 
 }  // namespace redis

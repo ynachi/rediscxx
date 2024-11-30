@@ -54,13 +54,16 @@ namespace redis
         Result<bytes> read_exact(int64_t n);
 
         /**
-         * write_to_stream writes some data to the underlined stream of the handler.
+         * send_frame writes frames to the underlined stream of the handler.
          * It is similar to calling the send method on the Photonlib socket stream.
-         * @param data
-         * @param size
+         * @param frame
          * @return return the same output as send. The number of bytes written if success, a negative number if not.
          */
-        ssize_t write_to_stream(const char* data, const size_t size) const { return stream_->send(data, size); }
+        ssize_t send_frame(const Frame& frame) const
+        {
+            const auto data = frame.as_bytes();
+            return stream_->send(data.data(), data.size());
+        }
         /**
          * data is used to get a non-mutable access to the data managed by the buffer.
          *

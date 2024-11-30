@@ -16,8 +16,8 @@ def send_message(message: str, host: str = '127.0.0.1', port: int = 6379):
 
 def main():
     messages = [
-        "hello\n",
-        "world\n",
+        "+hello\r\n",
+        "$5\r\nworld\r\n",
         "test message\n",
     ]
 
