@@ -6,12 +6,20 @@
 
 void handle_connection(photon::net::ISocketStream* stream)
 {
+    int cpu = sched_getcpu();
+    LOG_INFO("Handling connection from CPU %d", cpu);
+    DEFER(delete stream);
     std::vector<char> buf;  // Predefined buffer size
     buf.reserve(1024);
     while (true)
     {
         ssize_t ret = stream->recv(buf.data(), 1024);
-        if (ret <= 0)
+        if (ret == 0)
+        {
+            LOG_INFO("Connection closed");
+            return;
+        }
+        if (ret < 0)
         {
             LOG_FATAL("failed to bind tcp socket");
             // LOG_ERRNO_RETURN(0,, "failed to read socket");
@@ -22,7 +30,7 @@ void handle_connection(photon::net::ISocketStream* stream)
             buf[i] = std::toupper(buf[i]);
         }
         stream->send(buf.data(), ret);
-        LOG_INFO("Received and sent back ", ret, " bytes.");
+        LOG_INFO("Received and sent back ", ret, " bytes. ");
         photon::thread_yield();
     }
 }
@@ -36,11 +44,12 @@ int main()
     DEFER(photon::fini());
     // @TODO: If you want to listen on multiple CPUs ?
     // auto ret = photon_std::work_pool_init(8, photon::INIT_EVENT_IOURING, photon::INIT_IO_NONE);
-    // if (ret != 0) {
+    // if (ret != 0)
+    // {
     //     LOG_FATAL("Work-pool init failed");
     //     abort();
     // }
-    // DEFER(photon_std::work_pool_fini());
+    DEFER(photon_std::work_pool_fini());
 
     auto server = photon::net::new_tcp_socket_server();
     if (server == nullptr)
@@ -49,7 +58,7 @@ int main()
     }
     DEFER(delete server);
     photon::net::IPAddr addr{"127.0.0.300"};
-    if (server->bind(6093, addr) < 0)
+    if (server->bind(6379, addr) < 0)
     {
         LOG_ERRNO_RETURN(0, -1, "failed to bind server to port 9527");
     }
@@ -61,8 +70,7 @@ int main()
     }
     LOG_INFO("Server is listening for port ` ...", 9528);
 
-    photon::WorkPool wp(std::thread::hardware_concurrency(), photon::INIT_EVENT_IOURING, photon::INIT_IO_NONE,
-                        128 * 1024);
+    photon::WorkPool wp(1, photon::INIT_EVENT_IOURING, photon::INIT_IO_NONE, 128 * 1024);
 
     while (true)
     {

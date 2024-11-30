@@ -9,17 +9,22 @@
 #include <photon/thread/std-compat.h>
 #include <photon/thread/workerpool.h>
 
+#include "framer/handler.h"
+
 namespace redis
 {
     // @TODO: validate IPs and provide a config factory method
     struct ServerConfig
     {
-        size_t event_thread_count_ = std::thread::hardware_concurrency();
-        size_t event_engine_ = photon::INIT_EVENT_DEFAULT;
+        size_t worker_thread_count_ = std::thread::hardware_concurrency();
+        size_t io_thread_count_ = std::thread::hardware_concurrency();
+        ssize_t max_concurrent_connections_ = 250;
+        size_t event_engine_ = photon::INIT_EVENT_IOURING;
         size_t io_engine_ = photon::INIT_IO_NONE;
         photon::net::IPAddr host_{"127.0.0.1"};
         size_t network_read_chunk_{1024};
         uint16_t port_ = 6379;
+        size_t max_recursion_depth_ = 30;
     };
 
     class Server : public std::enable_shared_from_this<Server>
@@ -33,7 +38,6 @@ namespace redis
         {
             photon_std::work_pool_fini();
             photon::fini();
-            delete socket_server_;
         }
 
         Server(const Server &) = delete;
@@ -44,15 +48,11 @@ namespace redis
 
         Server &operator=(Server &&) noexcept = delete;
 
-        void start_accept_loop();
-
-        static void handle_connection(std::unique_ptr<photon::net::ISocketStream> conn);
+        void run();
 
     private:
-        void listen_();
-
         ServerConfig server_config_{};
-        photon::net::ISocketServer *socket_server_ = nullptr;
+        std::unique_ptr<photon::net::ISocketServer> socket_server_;
     };
 }  // namespace redis
 

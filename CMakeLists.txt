@@ -11,10 +11,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(GTEST_GIT_TAG v1.15.2)
 
 # Apply AddressSanitizer options only in Debug mode
-#if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-#    add_compile_options(-fsanitize=address -g)
-#    add_link_options(-fsanitize=address)
-#endif ()
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_compile_options(-fsanitize=address -g)
+    add_link_options(-fsanitize=address)
+endif ()
 
 set(REDISCXX_BUILD_SUPPORT_DIR "${CMAKE_SOURCE_DIR}/build_support")
 
@@ -29,6 +29,9 @@ if ("${CLANG_FORMAT_BIN}" STREQUAL "CLANG_FORMAT_BIN-NOTFOUND")
 else ()
     message(STATUS "redis/main found clang-format at ${CLANG_FORMAT_BIN}")
 endif ()
+
+# python
+find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 
 # Photon
 include(cmake/FindPhoton.cmake)
@@ -77,6 +80,10 @@ enable_testing()
 add_executable(protocol_test tests/framer/handler_test.cc)
 target_link_libraries(protocol_test GTest::gtest_main framer_lib photon_static)
 add_test(NAME protocol_test COMMAND protocol_test)
+
+add_executable(frame_test tests/framer/frame_test.cc)
+target_link_libraries(frame_test GTest::gtest_main framer_lib photon_static)
+add_test(NAME frame_test COMMAND frame_test)
 
 add_executable(memory_stream_test tests/memory_stream/mstream_test.cpp)
 target_link_libraries(memory_stream_test GTest::gtest_main memory_stream_lib photon_static)

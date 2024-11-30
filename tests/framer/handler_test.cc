@@ -29,6 +29,7 @@ protected:
     }
 };
 
+bytes string_to_bytes(const std::string& input) { return std::vector(input.begin(), input.end()); }
 //
 // Read Exact
 //
@@ -43,10 +44,10 @@ TEST_F(HandlerTest, ReadExact)
     client->send(data, 5);
     auto read1 = h->read_exact(3);
     EXPECT_FALSE(read1.is_error());
-    EXPECT_EQ(read1.value(), "hel") << "read_exact can read part of a buffer";
+    EXPECT_EQ(read1.value(), string_to_bytes("hel")) << "read_exact can read part of a buffer";
 
     auto read2 = h->read_exact(2);
-    EXPECT_EQ(read2.value(), "lo") << "read_exact can read part the rest of a buffer";
+    EXPECT_EQ(read2.value(), string_to_bytes("lo")) << "read_exact can read part the rest of a buffer";
     ASSERT_TRUE(h->seen_eof()) << "read_exact: the buffer is empty and eof seen in upstream";
 }
 
@@ -57,7 +58,7 @@ TEST_F(HandlerTest, ReadExactNotEnoughData)
     auto read3 = h->read_exact(8);
     ASSERT_TRUE(h->seen_eof()) << "read_exact: reading more than the buffer should set EOF bit";
     EXPECT_TRUE(read3.is_error());
-    EXPECT_EQ(read3.error(), RedisError::not_enough_data) << "read_exact: should error when there is not enough data ";
+    EXPECT_EQ(read3.error(), RedisError::not_enough_data) << "read_exact: should error when there is not enough data";
 }
 
 //
@@ -69,9 +70,9 @@ TEST_F(HandlerTest, ReadUntilBasic)
     auto data = "hello\nha";
     client->send(data, 8);
     auto read = h->read_until('\n');
-    EXPECT_EQ(read.value(), "hello\n") << "read_until can read part of a buffer";
+    EXPECT_EQ(read.value(), string_to_bytes("hello\n")) << "read_until can read part of a buffer";
     ASSERT_TRUE(h->seen_eof()) << "read_until: data read is lower than chunk size, so EOF should be set";
-    ASSERT_EQ(std::string_view(h->get_buffer().begin(), h->get_buffer().end()), "ha");
+    ASSERT_EQ(h->get_buffer(), string_to_bytes("ha"));
 }
 
 TEST_F(HandlerTest, ReadUntilMultipleReads)
@@ -79,12 +80,13 @@ TEST_F(HandlerTest, ReadUntilMultipleReads)
     auto data = "hello\nworld\nouu";
     client->send(data, 15);
     auto read = h->read_until('\n');
-    EXPECT_EQ(read.value(), "hello\n") << "read_until can read part of a buffer";
+    EXPECT_EQ(read.value(), string_to_bytes("hello\n")) << "read_until can read part of a buffer";
     ASSERT_TRUE(h->seen_eof()) << "read_until: data read is lower than chunk size, so EOF should be set";
     ASSERT_EQ(std::string_view(h->get_buffer().begin(), h->get_buffer().end()), "world\nouu");
     auto read2 = h->read_until('\n');
-    EXPECT_EQ(read2.value(), "world\n") << "read_until subsequent reads are still success even if the network is "
-                                           "closed because the buffer hold valid data";
+    EXPECT_EQ(read2.value(), string_to_bytes("world\n"))
+            << "read_until subsequent reads are still success even if the network is "
+               "closed because the buffer hold valid data";
 }
 
 TEST_F(HandlerTest, ReadUntilDelimiterAtBoundary)
@@ -92,7 +94,7 @@ TEST_F(HandlerTest, ReadUntilDelimiterAtBoundary)
     auto data = "hello\n";
     client->send(data, 6);
     auto read = h->read_until('\n');
-    EXPECT_EQ(read.value(), "hello\n") << "read_until can read part of a buffer";
+    EXPECT_EQ(read.value(), string_to_bytes("hello\n")) << "read_until can read part of a buffer";
     ASSERT_TRUE(h->seen_eof()) << "read_until: data read is lower than chunk size, so EOF should be set";
     ASSERT_TRUE(h->empty());
 }
@@ -106,7 +108,7 @@ TEST_F(HandlerTest, ReadUntilMultipleChunkLowerThanData)
     }
     client->send(data.data(), 600);
     auto read = h->read_until('\n');
-    EXPECT_EQ(read.value(), "hello\n") << "read_until can read part of a buffer";
+    EXPECT_EQ(read.value(), string_to_bytes("hello\n")) << "read_until can read part of a buffer";
     ASSERT_FALSE(h->seen_eof()) << "read_until: chunk is lower than data so EOF should not be set";
 }
 
@@ -122,7 +124,7 @@ TEST_F(HandlerTest, ReadUntilRequestSpanMultipleInternalReads)
     client->send(data.data(), data.size());
     auto read = h->read_until('\n');
     EXPECT_EQ(read.value().size(), 56) << "read_until can read part of a buffer";
-    EXPECT_EQ(std::string_view(data.data(), 56), read.value());
+    EXPECT_EQ(std::vector(data.begin(), data.begin() + 56), read.value());
 }
 
 TEST_F(HandlerTest, ReadUntilEmptyBufferNoData)
@@ -231,17 +233,17 @@ TEST_F(HandlerTest, DecodeBulk)
 
     auto b_string1 = h->decode(0, MAX_RECURSION_DEPTH);
     ASSERT_FALSE(b_string1.is_error());
-    auto frame = Frame{FrameID::BulkString, "hello"};
+    auto frame = Frame{FrameID::BulkString, string_to_bytes("hello")};
     ASSERT_EQ(b_string1.value(), frame);
 
     auto b_string2 = h->decode(0, MAX_RECURSION_DEPTH);
     ASSERT_FALSE(b_string2.is_error());
-    auto frame2 = Frame{FrameID::BulkString, "hel\rlo"};
+    auto frame2 = Frame{FrameID::BulkString, string_to_bytes("hel\rlo")};
     ASSERT_EQ(b_string2.value(), frame2);
 
     auto b_string3 = h->decode(0, MAX_RECURSION_DEPTH);
     ASSERT_FALSE(b_string3.is_error());
-    auto frame3 = Frame{FrameID::BulkString, "hel\nlo"};
+    auto frame3 = Frame{FrameID::BulkString, string_to_bytes("hel\nlo")};
     ASSERT_EQ(b_string3.value(), frame3);
 
     auto b_string4 = h->decode(0, MAX_RECURSION_DEPTH);
@@ -276,17 +278,17 @@ TEST_F(HandlerTest, DecodeSimple)
 
     auto read = h->decode(0, MAX_RECURSION_DEPTH);
     ASSERT_FALSE(read.is_error());
-    auto frame = Frame{FrameID::SimpleString, "hello"};
+    auto frame = Frame{FrameID::SimpleString, string_to_bytes("hello")};
     ASSERT_EQ(read.value(), frame);
 
     auto read2 = h->decode(0, MAX_RECURSION_DEPTH);
     ASSERT_FALSE(read2.is_error());
-    auto frame2 = Frame{FrameID::SimpleString, "-25"};
+    auto frame2 = Frame{FrameID::SimpleString, string_to_bytes("-25")};
     ASSERT_EQ(read2.value(), frame2);
 
     auto read3 = h->decode(0, MAX_RECURSION_DEPTH);
     ASSERT_FALSE(read3.is_error());
-    auto frame3 = Frame{FrameID::SimpleError, "hello"};
+    auto frame3 = Frame{FrameID::SimpleError, string_to_bytes("hello")};
     ASSERT_EQ(read3.value(), frame3);
 }
 
@@ -312,13 +314,13 @@ TEST_F(HandlerTest, DecodeArray)
     client->send(data.data(), data.size());
 
     const auto result = h->decode(0, MAX_RECURSION_DEPTH);
-    auto vect = std::vector{Frame{FrameID::Integer, 1}, Frame{FrameID::SimpleString, "Two"},
-                            Frame{FrameID::BulkString, "Three"}};
+    auto vect = std::vector{Frame{FrameID::Integer, 1}, Frame{FrameID::SimpleString, string_to_bytes("Two")},
+                            Frame{FrameID::BulkString, string_to_bytes("Three")}};
     const auto ans = Frame{FrameID::Array, std::move(vect)};
     EXPECT_EQ(result.value(), ans) << "can decode a simple string with start a stream";
 
     const auto result2 = h->decode(0, MAX_RECURSION_DEPTH);
-    auto inner_vect = std::vector{Frame{FrameID::SimpleString, "Three"}};
+    auto inner_vect = std::vector{Frame{FrameID::SimpleString, string_to_bytes("Three")}};
     auto vect2 = std::vector{Frame{FrameID::Integer, 1}, Frame{FrameID::Array, inner_vect}};
     const auto ans2 = Frame{FrameID::Array, std::move(vect2)};
     EXPECT_EQ(result2.value(), ans2) << "can decode a nested array";
@@ -351,7 +353,7 @@ TEST_F(HandlerTest, DecodeCommand)
     client->send(data.data(), data.size());
 
     const auto result = h->decode(0, MAX_RECURSION_DEPTH);
-    auto vect = std::vector{Frame{FrameID::BulkString, "PING"}};
+    auto vect = std::vector{Frame{FrameID::BulkString, string_to_bytes("PING")}};
     const auto ans = Frame{FrameID::Array, std::move(vect)};
     EXPECT_EQ(result.value(), ans) << "can decode a simple string with start a stream";
 }

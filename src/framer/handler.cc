@@ -27,9 +27,9 @@ namespace redis
         if (rd < 0)
         {
             LOG_WARN("failed to read from stream, error: {}", rd);
-            return make_ssizet_error(RedisError::generic_network_error);
+            return {RedisError::generic_network_error};
         }
-        if (rd == 0 && buffer_.empty()) return make_ssizet_error(RedisError::eof);
+        if (rd == 0 && buffer_.empty()) return {RedisError::eof};
         if (rd < chunk_size_)
         {
             // getting less than chunk_size means we got EOF
@@ -40,11 +40,11 @@ namespace redis
     }
 
 
-    Result<std::string> Handler::read_until(const char c)
+    Result<bytes> Handler::read_until(const char c)
     {
         if (this->empty() && this->seen_eof())
         {
-            return make_string_error(RedisError::eof);
+            return {RedisError::eof};
         }
 
         int64_t cursor{0};
@@ -52,74 +52,74 @@ namespace redis
         {
             if (auto it = std::ranges::find(buffer_.begin() + cursor, buffer_.end(), c); it != buffer_.end())
             {
-                std::string line{buffer_.begin(), it + 1};
+                bytes data{buffer_.begin(), it + 1};
                 buffer_.erase(buffer_.begin(), it + 1);
-                return {line};
+                return {data};
             }
             // LOG_DEBUG("could not find the delimiter in the internal buffer, calling more from source stream");
             if (eof_reached_)
             {
                 const auto err = buffer_.empty() ? RedisError::eof : RedisError::incomplete_frame;
-                return make_string_error(err);
+                return {err};
             }
             cursor = static_cast<int64_t>(this->buffer_size());
             // read more data from upstream
             auto maybe_error = this->get_more_data_upstream_();
             if (maybe_error.is_error())
             {
-                return make_string_error(maybe_error.error());
+                return {maybe_error.error()};
             }
             LOG_DEBUG("poured {} bytes from source stream", maybe_error.value());
         }
     }
 
-    Result<std::string> Handler::read_exact(const int64_t n)
+    Result<bytes> Handler::read_exact(const int64_t n)
     {
         assert(n > 0);
         if (this->empty() && this->seen_eof())
         {
-            return make_string_error(RedisError::eof);
+            return {RedisError::eof};
         }
         while (buffer_.size() < n && !seen_eof())
         {
             if (auto maybe_error = this->get_more_data_upstream_(); maybe_error.is_error())
             {
-                return make_string_error(maybe_error.error());
+                return {maybe_error.error()};
             }
         }
         if (buffer_.size() < n)
         {
-            return make_string_error(RedisError::not_enough_data);
+            return {RedisError::not_enough_data};
         }
-        auto ans = std::string(buffer_.begin(), buffer_.begin() + n);
+        auto ans = bytes(buffer_.begin(), buffer_.begin() + n);
         buffer_.erase(buffer_.begin(), buffer_.begin() + n);
         return {ans};
     }
 
-    Result<std::string> Handler::get_simple_string_()
+    Result<bytes> Handler::get_simple_string_()
     {
         const auto maybe_ans = this->read_until(LF);
         if (maybe_ans.is_error())
         {
-            return make_string_error(maybe_ans.error());
+            return {maybe_ans.error()};
         }
-        auto ans_view = std::string_view(maybe_ans.value());
+        auto ans_view = std::span(maybe_ans.value());
         if (ans_view.size() < 2)
         {
             LOG_DEBUG("get_simple_string: data is less than 2 bytes");
-            return make_string_error(RedisError::incomplete_frame);
+            return {RedisError::incomplete_frame};
         };
         if (ans_view[ans_view.size() - 2] != CR)
         {
             LOG_DEBUG("get_simple_string: found a standalone LF in the frame, this should not be in simple frames");
-            return make_string_error(RedisError::invalid_frame);
+            return {RedisError::invalid_frame};
         }
         if (std::ranges::find(ans_view.begin(), ans_view.end() - 2, CR) != ans_view.end() - 2)
         {
             LOG_DEBUG("get_simple_string: found a standalone CR in the frame, this should not be in simple frames");
-            return make_string_error(RedisError::invalid_frame);
+            return {RedisError::invalid_frame};
         }
-        return {std::string(ans_view.data(), ans_view.size() - 2)};
+        return {bytes(ans_view.begin(), ans_view.end() - 2)};
     }
 
     Result<int64_t> Handler::get_integer_()
@@ -127,31 +127,31 @@ namespace redis
         const auto maybe_ans = this->get_simple_string_();
         if (maybe_ans.is_error())
         {
-            return make_int64_error(maybe_ans.error());
+            return {maybe_ans.error()};
         }
         int64_t ans;
         auto [_, ec] =
                 std::from_chars(maybe_ans.value().data(), maybe_ans.value().data() + maybe_ans.value().size(), ans);
         if (ec == std::errc())
         {
-            return Result<int64_t>(ans);
+            return {ans};
         }
-        return make_int64_error(RedisError::atoi);
+        return {RedisError::atoi};
     }
 
 
-    Result<std::string> Handler::get_bulk_string_()
+    Result<bytes> Handler::get_bulk_string_()
     {
         auto size_result = this->get_integer_();
         if (size_result.is_error())
         {
-            return make_string_error(size_result.error());
+            return {size_result.error()};
         }
         auto size = size_result.value();
         if (size == -1)
         {
             // if size == -1, the user intent was to specially send empty bulk frame
-            return {""};
+            return {{}};
         }
         if (size == 0)
         {
@@ -163,18 +163,18 @@ namespace redis
         auto interim_read = read_exact(size + 2);
         if (interim_read.is_error())
         {
-            return make_string_error(interim_read.error());
+            return {interim_read.error()};
         }
 
-        auto ans_view = std::string_view(interim_read.value());
+        auto ans_view = std::span(interim_read.value());
 
 
         if (ans_view[ans_view.size() - 2] != CR || ans_view[ans_view.size() - 1] != LF)
         {
-            return make_string_error(RedisError::invalid_frame);
+            return {RedisError::invalid_frame};
         }
 
-        return Result<std::string>(std::string(ans_view.data(), ans_view.size() - 2));
+        return {bytes(ans_view.begin(), ans_view.end() - 2)};
     }
 
     Result<FrameID> Handler::get_frame_id_()
@@ -192,7 +192,7 @@ namespace redis
         }
         auto c = this->buffer_[0];
         this->buffer_.erase(this->buffer_.begin());
-        return {frame_id_from_u8(c)};
+        return {frame_id_from_char(c)};
     }
 
     Result<Frame> Handler::decode(const u_int8_t dept, const u_int8_t max_depth)
@@ -259,7 +259,7 @@ namespace redis
         {
             return {ans.error()};
         }
-        if (const std::string & ans_value{ans.value()}; !ans_value.empty())
+        if (!ans.value().empty())
         {
             LOG_DEBUG("decode: got a non-null frame with data");
             return {RedisError::invalid_frame};
@@ -274,12 +274,12 @@ namespace redis
         {
             return {data.error()};
         }
-        std::string_view ans_view{data.value()};
-        if (ans_view == "t")
+        bytes ans_view{data.value()};
+        if (ans_view == std::vector{'t'})
         {
             return {Frame{FrameID::Boolean, true}};
         }
-        if (ans_view == "f")
+        if (ans_view == std::vector{'f'})
         {
             return {Frame{FrameID::Boolean, false}};
         }
@@ -307,6 +307,35 @@ namespace redis
             frames.emplace_back(frame.value());
         }
         return {Frame{FrameID::Array, frames}};
+    }
+
+    void Handler::start_session()
+    {
+        LOG_DEBUG("starting a session on vcpu:", sched_getcpu());
+        for (;;)
+        {
+            if (auto maybe_frame = this->decode(0, 8); !maybe_frame.is_error())
+            {
+                auto data = maybe_frame.value().to_string();
+                auto _ = this->send_frame(maybe_frame.value());
+            }
+            else
+            {
+                const auto err = maybe_frame.error();
+                if (err == RedisError::eof)
+                {
+                    LOG_DEBUG("client disconnected");
+                    return;
+                }
+                std::error_code ec = make_error_code(err);
+                auto err_msg = ec.message();
+                //@TODO create the right error frame
+                auto err_frame{Frame{FrameID::SimpleError, std::vector<char>{err_msg.begin(), err_msg.end()}}};
+
+                LOG_DEBUG("error while decoding frame");
+                auto _ = this->send_frame(err_frame);
+            }
+        }
     }
 
 }  // namespace redis
