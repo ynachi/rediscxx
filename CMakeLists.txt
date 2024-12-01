@@ -39,6 +39,13 @@ include(cmake/FindPhoton.cmake)
 # Gtest
 include(cmake/FindGtest.cmake)
 
+# gflags
+find_package(gflags REQUIRED)
+
+find_package(glog REQUIRED)
+
+find_package(benchmark REQUIRED)
+
 # project include dirs
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
@@ -54,7 +61,7 @@ add_library(utils_lib ${UTILS_HEADERS} ${UTILS_SOURCE})
 set(FRAME_HANDLER_HEADERS include/framer/handler.h include/framer/frame.h)
 set(FRAME_HANDLER_SOURCES src/framer/handler.cc src/framer/frame.cc)
 add_library(framer_lib ${FRAME_HANDLER_SOURCES} ${FRAME_HANDLER_HEADERS})
-target_link_libraries(framer_lib PRIVATE photon_static utils_lib)
+target_link_libraries(framer_lib PRIVATE photon_static utils_lib glog::glog)
 
 # in memory stream for testing
 add_library(memory_stream_lib include/memory_stream/mstream.h
@@ -68,7 +75,7 @@ add_library(server_lib ${SERVER_SOURCES} ${SERVER_HEADERS})
 target_link_libraries(server_lib PRIVATE framer_lib photon_static)
 
 add_executable(redis main.cpp)
-target_link_libraries(redis PRIVATE server_lib photon_static)
+target_link_libraries(redis PRIVATE server_lib photon_static glog::glog)
 
 add_executable(poton src/poton.cpp)
 target_link_libraries(poton PRIVATE photon_static)

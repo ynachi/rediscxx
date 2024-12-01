@@ -2,6 +2,7 @@
 
 git clone https://github.com/scylladb/seastar.git && export DEBIAN_FRONTEND=noninteractive  && cd seastar \
     && sudo apt-get update && sudo apt-get install -y \
+    libgflags-dev libgoogle-glog-dev libbenchmark-dev  \
     curl \
     gnupg \
     && echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-18 main" \

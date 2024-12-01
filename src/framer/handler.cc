@@ -311,13 +311,15 @@ namespace redis
 
     void Handler::start_session()
     {
-        LOG_DEBUG("starting a session on vcpu:", sched_getcpu());
+        LOG_DEBUG("starting a session on vcpu: ", sched_getcpu());
         for (;;)
         {
             if (auto maybe_frame = this->decode(0, 8); !maybe_frame.is_error())
             {
-                auto data = maybe_frame.value().to_string();
-                auto _ = this->send_frame(maybe_frame.value());
+                if (auto ret = this->send_frame(maybe_frame.value()); ret <= 0)
+                {
+                    LOG_ERRNO_RETURN(0, , "error while sending frame");
+                }
             }
             else
             {
@@ -329,11 +331,13 @@ namespace redis
                 }
                 std::error_code ec = make_error_code(err);
                 auto err_msg = ec.message();
-                //@TODO create the right error frame
                 auto err_frame{Frame{FrameID::SimpleError, std::vector<char>{err_msg.begin(), err_msg.end()}}};
 
                 LOG_DEBUG("error while decoding frame");
-                auto _ = this->send_frame(err_frame);
+                if (auto ret = this->send_frame(err_frame); ret <= 0)
+                {
+                    LOG_ERRNO_RETURN(0, , "error while sending frame");
+                }
             }
         }
     }

@@ -62,7 +62,7 @@ namespace redis
         ssize_t send_frame(const Frame& frame) const
         {
             const auto data = frame.as_bytes();
-            return stream_->send(data.data(), data.size());
+            return stream_->write(data.data(), data.size());
         }
         /**
          * data is used to get a non-mutable access to the data managed by the buffer.
@@ -88,7 +88,12 @@ namespace redis
         // start session sart processing and responding to frames.
         void start_session();
 
+        /// handle_frame extracts a command from a frame and apply the command
+        void handle_frame(const Frame& frame);
+
     private:
+        // parse a frame, extract command and its args as string
+        std::vector<std::string> parse_frame(const Frame& frame);
         Result<ssize_t> get_more_data_upstream_();
         Result<bytes> get_simple_string_();
         Result<bytes> get_bulk_string_();
